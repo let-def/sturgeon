@@ -29,31 +29,29 @@
 type t =
   | C of t * t
   | S of string
-  | T of string * property list
+  | T of string
+  | P of t
   | I of int
   | F of float
 
-and property =
-  {p_start: int; p_end: int; p_name: string; p_value: t}
-
+let t = S "t"
 let nil = S "nil"
 
 let rec sexp_of_list = function
   | [] -> nil
   | a :: tl -> C (a, sexp_of_list tl)
 
-let rec tell_sexp tell = function
+let rec tell_sexp (tell : _ -> unit) = function
   | C (a,b) ->
     tell "(";
     tell_sexp tell a;
     tell_cons tell b
-  | T (s, []) -> tell ("\"" ^ String.escaped s ^ "\"")
-  | T (s, props) ->
-    tell ("#(\"" ^ String.escaped s ^ "\"");
-    tell_prop tell props
+  | T s -> tell ("\"" ^ String.escaped s ^ "\"")
   | S s -> tell (String.escaped s)
   | I i -> tell (string_of_int i)
   | F f -> tell (string_of_float f)
+  | P s -> tell "#"; tell_sexp tell s
+
 
 and tell_cons tell = function
   | S "nil" -> tell ")"
@@ -65,30 +63,6 @@ and tell_cons tell = function
     tell " . ";
     tell_sexp tell sexp;
     tell ")"
-
-and tell_prop tell = function
-  | [] -> tell ")"
-  | prop :: props ->
-    tell " ";
-    tell (string_of_int prop.p_start);
-    tell " ";
-    tell (string_of_int prop.p_end);
-    tell " (";
-    tell (String.escaped prop.p_name);
-    tell " ";
-    tell_sexp tell prop.p_value;
-    tell_other_prop tell prop.p_start prop.p_end props
-
-and tell_other_prop tell p_start p_end = function
-  | prop :: props when prop.p_start = p_start && prop.p_end = p_end ->
-    tell " ";
-    tell (String.escaped prop.p_name);
-    tell " ";
-    tell_sexp tell prop.p_value;
-    tell_other_prop tell p_start p_end props
-  | props ->
-    tell ")";
-    tell_prop tell props
 
 let is_alpha c =
   (c >= 'a' && c <= 'z')
@@ -117,7 +91,11 @@ let read_sexp getch =
     | '(' ->
       let lhs, next = read_sexp getch (getch ()) in
       read_cons getch (fun rhs -> C (lhs, rhs)) next
-       | '#'
+
+    | '#' ->
+      let t, c = read_sexp getch (getch ()) in
+      P t, c
+
     | _ -> failwith "Invalid parse"
 
   and read_cons getch k next =
@@ -169,7 +147,7 @@ let read_sexp getch =
         Buffer.add_char buf (getch ());
         aux ()
       | '"' ->
-        T (Scanf.unescaped (Buffer.contents buf), []), None
+        T (Scanf.unescaped (Buffer.contents buf)), None
       | c ->
         Buffer.add_char buf c;
         aux ()
@@ -235,7 +213,7 @@ let of_file_descr ~on_read fd =
     | None ->
       match !getch () with
       | '\000' ->
-        on_read fd;
+        (on_read fd : unit);
         let read = Unix.read fd buffer 0 1024 in
         if read = 0 then '\000'
         else
@@ -252,4 +230,30 @@ let of_file_descr ~on_read fd =
       Some sexp
     with End_of_file -> None
 
-let of_channel ic = of_file_descr (Unix.descr_of_in_channel ic)
+let of_channel ic =
+  let getch = ref (fun () -> '\000') in
+  let rest = ref None in
+  let buffer = Bytes.create 1024 in
+  let getch () =
+    match !rest with
+    | Some r ->
+      rest := None;
+      r
+    | None ->
+      match !getch () with
+      | '\000' ->
+        let read = input ic buffer 0 1024 in
+        if read = 0 then '\000'
+        else
+          begin
+            getch := getch_of_substring buffer 0 read;
+            !getch ()
+          end
+      | c -> c
+  in
+  fun () ->
+    try
+      let sexp, rest' = read_sexp getch in
+      rest := rest';
+      Some sexp
+    with End_of_file -> None
