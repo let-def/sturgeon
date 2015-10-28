@@ -36,7 +36,23 @@ val t : t
 val sexp_of_list : t list -> t
 
 (** {2 Low-level IO} *)
-val tell_sexp : (string -> unit) -> t -> 'a
+
+(** Serialize an s-exp by repetively calling a string printing function. *)
+val tell_sexp : (string -> unit) -> t -> unit
+
+(** Read an sexp by repetively calling a character reading function.
+
+    The character reading function can return '\000' to signal EOF.
+
+    Returns the sexp and, if any, the last character read but not part of the
+    sexp.
+
+    If the sexp is not well-formed, a Failure is raised.  You can catch it and
+    add relevant location information.
+    The error is always due to the last call to the reading function, which
+    should be enough to locate the erroneous input, except for unterminated
+    string.
+*)
 val read_sexp : (unit -> char) -> t * char option
 
 (** {2 Higher-level IO} *)
