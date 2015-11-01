@@ -13,33 +13,29 @@
 
 (** {1 Emacs S-exp format} *)
 
-type 'a t =
-    C of 'a t * 'a t  (** cons cell   *)
-  | S of string       (** 'sym        *)
-  | T of string       (** "text"      *)
-  | P of 'a t         (** #(property) *)
-  | I of int          (** 1           *)
-  | F of float        (** 1.0         *)
-  | M of 'a           (** user-defined construction, outside of s-exp language *)
+type void
+val void: void -> 'a
+ 
+type t = void Emacs_sexp.t
 
 (** {2 Basic values} *)
 
 (** nil constant: S "nil" *)
-val nil : 'a t
+val nil : t
 
 (** t constant: S "t" *)
-val t : 'a t
+val t : t
 
 (** Build  a list in sexp format,
     []      -> nil
     x :: xs -> C (x, sexp_of_list xs)
 *)
-val sexp_of_list : 'a t list -> 'a t
+val sexp_of_list : t list -> t
 
 (** {2 Low-level IO} *)
 
 (** Serialize an s-exp by repetively calling a string printing function. *)
-val tell_sexp : (string -> unit) -> meta:('a t -> 'a t) -> 'a t -> unit
+val tell_sexp : (string -> unit) -> t -> unit
 
 (** Read an sexp by repetively calling a character reading function.
 
@@ -54,15 +50,15 @@ val tell_sexp : (string -> unit) -> meta:('a t -> 'a t) -> 'a t -> unit
     should be enough to locate the erroneous input, except for unterminated
     string.
 *)
-val read_sexp : (unit -> char) -> meta:('a t -> 'a t) -> 'a t * char
+val read_sexp : (unit -> char) -> t * char
 
 (** {2 Higher-level IO} *)
 
-val to_buf : meta:('a t -> 'a t) -> 'a t -> Buffer.t -> unit
+val to_buf : t -> Buffer.t -> unit
 
-val to_string : meta:('a t -> 'a t) -> 'a t -> string
+val to_string : t -> string
 
-val of_string : meta:('a t -> 'a t) -> string -> 'a t
+val of_string : string -> t
 
 (** Read from a file descriptor.
 
@@ -73,11 +69,11 @@ val of_string : meta:('a t -> 'a t) -> string -> 'a t
     of sexp.
 *)
 val of_file_descr :
-  on_read:(Unix.file_descr -> unit) -> Unix.file_descr -> meta:('a t -> 'a t) -> unit -> 'a t option
+  on_read:(Unix.file_descr -> unit) -> Unix.file_descr -> unit -> t option
 
 (** Read from a channel.
 
     Partial application (stopping before the last [()]) allows to read a stream
     of sexp.
 *)
-val of_channel : in_channel -> meta:('a t -> 'a t) -> unit -> 'a t option
+val of_channel : in_channel -> unit -> t option

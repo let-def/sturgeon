@@ -1,7 +1,9 @@
 all: byte-code-library native-code-library
 	for i in $(SUB); do $(MAKE) -C $$i $@; done
 
-SOURCES = emacs_sexp.mli emacs_sexp.ml
+SOURCES = emacs_sexp.mli emacs_sexp.ml \
+					emacs_sexp_basic.mli emacs_sexp_basic.ml
+
 RESULT = emacs_serge
 
 LIBINSTALL_FILES = \
