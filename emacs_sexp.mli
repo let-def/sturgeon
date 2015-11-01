@@ -13,34 +13,34 @@
 
 (** {1 Parametric S-exp} *)
 
-type 'a t =
-    C of 'a t * 'a t  (** cons cell   *)
+type 'a sexp =
+    C of 'a sexp * 'a sexp  (** cons cell   *)
   | S of string       (** 'sym        *)
   | T of string       (** "text"      *)
-  | P of 'a t         (** #(property) *)
+  | P of 'a sexp         (** #(property) *)
   | I of int          (** 1           *)
   | F of float        (** 1.0         *)
   | M of 'a           (** user-defined construction, outside of s-exp language *)
 
 (** Recursively transform a sexp.
     [map] function is applied on each atom and at the root of each list *)
-val transform_list : inj:('a -> 'b t) -> map:('b t -> 'b t) -> 'a t -> 'b t
+val transform_list : inj:('a -> 'b sexp) -> map:('b sexp -> 'b sexp) -> 'a sexp -> 'b sexp
 
 (** Recursively transform a sexp.
     [map] function is applied on each atom and each cons-cell *)
-val transform_cons : inj:('a -> 'b t) -> map:('b t -> 'b t) -> 'a t -> 'b t
+val transform_cons : inj:('a -> 'b sexp) -> map:('b sexp -> 'b sexp) -> 'a sexp -> 'b sexp
 
 (** nil constant: S "nil" *)
-val nil : 'a t
+val sym_nil : 'a sexp
 
 (** t constant: S "t" *)
-val t : 'a t
+val sym_t : 'a sexp
 
-(** Build  a list in sexp format,
+(** Build a sexp list,
     []      -> nil
     x :: xs -> C (x, sexp_of_list xs)
 *)
-val sexp_of_list : 'a t list -> 'a t
+val sexp_of_list : 'a sexp list -> 'a sexp
 
 (** {1 Monomorphic Emacs S-exp format} *)
 
@@ -48,34 +48,34 @@ type void
 
 val void: void -> 'a
 
-type sexp = void t
+type basic = void sexp
 (** {1 Low-level IO} *)
 
 (** Serialize an s-exp by repetively calling a string printing function. *)
-val tell_sexp : (string -> unit) -> sexp -> unit
+val tell_sexp : (string -> unit) -> basic -> unit
 
-(** Read an sexp by repetively calling a character reading function.
+(** Read an basic by repetively calling a character reading function.
 
     The character reading function can return '\000' to signal EOF.
 
-    Returns the sexp and, if any, the last character read but not part of the
+    Returns the basic and, if any, the last character read but not part of the
     sexp, or '\000'.
 
-    If the sexp is not well-formed, a Failure is raised.  You can catch it and
+    If the basic is not well-formed, a Failure is raised.  You can catch it and
     add relevant location information.
     The error is always due to the last call to the reading function, which
     should be enough to locate the erroneous input, except for unterminated
     string.
 *)
-val read_sexp : (unit -> char) -> sexp * char
+val read_sexp : (unit -> char) -> basic * char
 
 (** {1 Higher-level IO} *)
 
-val to_buf : sexp -> Buffer.t -> unit
+val to_buf : basic -> Buffer.t -> unit
 
-val to_string : sexp -> string
+val to_string : basic -> string
 
-val of_string : string -> sexp
+val of_string : string -> basic
 
 (** Read from a file descriptor.
 
@@ -86,11 +86,11 @@ val of_string : string -> sexp
     of sexp.
 *)
 val of_file_descr :
-  on_read:(Unix.file_descr -> unit) -> Unix.file_descr -> unit -> sexp option
+  on_read:(Unix.file_descr -> unit) -> Unix.file_descr -> unit -> basic option
 
 (** Read from a channel.
 
     Partial application (stopping before the last [()]) allows to read a stream
     of sexp.
 *)
-val of_channel : in_channel -> unit -> sexp option
+val of_channel : in_channel -> unit -> basic option

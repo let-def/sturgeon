@@ -11,11 +11,11 @@
 
 )* }}} *)
 
-type 'a t =
-    C of 'a t * 'a t
+type 'a sexp =
+    C of 'a sexp * 'a sexp
   | S of string
   | T of string
-  | P of 'a t
+  | P of 'a sexp
   | I of int
   | F of float
   | M of 'a
@@ -46,13 +46,13 @@ let transform_cons ~inj ~map t =
   aux t
 
 
-type sexp = void t
+type basic = void sexp
 
-let t = S "t"
-let nil = S "nil"
+let sym_t = S "t"
+let sym_nil = S "nil"
 
 let rec sexp_of_list = function
-  | [] -> nil
+  | [] -> sym_nil
   | a :: tl -> C (a, sexp_of_list tl)
 
 let rec tell_sexp (tell : _ -> unit) sexp =
