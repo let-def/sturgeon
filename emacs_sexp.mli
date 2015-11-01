@@ -11,7 +11,7 @@
 
 )* }}} *)
 
-(** {1 Emacs S-exp format} *)
+(** {1 Parametric S-exp} *)
 
 type 'a t =
     C of 'a t * 'a t  (** cons cell   *)
@@ -22,7 +22,13 @@ type 'a t =
   | F of float        (** 1.0         *)
   | M of 'a           (** user-defined construction, outside of s-exp language *)
 
-(** {2 Basic values} *)
+(** Recursively transform a sexp.
+    [map] function is applied on each atom and at the root of each list *)
+val transform_list : inj:('a -> 'b t) -> map:('b t -> 'b t) -> 'a t -> 'b t
+
+(** Recursively transform a sexp.
+    [map] function is applied on each atom and each cons-cell *)
+val transform_cons : inj:('a -> 'b t) -> map:('b t -> 'b t) -> 'a t -> 'b t
 
 (** nil constant: S "nil" *)
 val nil : 'a t
@@ -36,10 +42,17 @@ val t : 'a t
 *)
 val sexp_of_list : 'a t list -> 'a t
 
-(** {2 Low-level IO} *)
+(** {1 Monomorphic Emacs S-exp format} *)
+
+type void
+
+val void: void -> 'a
+
+type sexp = void t
+(** {1 Low-level IO} *)
 
 (** Serialize an s-exp by repetively calling a string printing function. *)
-val tell_sexp : (string -> unit) -> meta:('a t -> 'a t) -> 'a t -> unit
+val tell_sexp : (string -> unit) -> sexp -> unit
 
 (** Read an sexp by repetively calling a character reading function.
 
@@ -54,15 +67,15 @@ val tell_sexp : (string -> unit) -> meta:('a t -> 'a t) -> 'a t -> unit
     should be enough to locate the erroneous input, except for unterminated
     string.
 *)
-val read_sexp : (unit -> char) -> meta:('a t -> 'a t) -> 'a t * char
+val read_sexp : (unit -> char) -> sexp * char
 
-(** {2 Higher-level IO} *)
+(** {1 Higher-level IO} *)
 
-val to_buf : meta:('a t -> 'a t) -> 'a t -> Buffer.t -> unit
+val to_buf : sexp -> Buffer.t -> unit
 
-val to_string : meta:('a t -> 'a t) -> 'a t -> string
+val to_string : sexp -> string
 
-val of_string : meta:('a t -> 'a t) -> string -> 'a t
+val of_string : string -> sexp
 
 (** Read from a file descriptor.
 
@@ -73,11 +86,11 @@ val of_string : meta:('a t -> 'a t) -> string -> 'a t
     of sexp.
 *)
 val of_file_descr :
-  on_read:(Unix.file_descr -> unit) -> Unix.file_descr -> meta:('a t -> 'a t) -> unit -> 'a t option
+  on_read:(Unix.file_descr -> unit) -> Unix.file_descr -> unit -> sexp option
 
 (** Read from a channel.
 
     Partial application (stopping before the last [()]) allows to read a stream
     of sexp.
 *)
-val of_channel : in_channel -> meta:('a t -> 'a t) -> unit -> 'a t option
+val of_channel : in_channel -> unit -> sexp option

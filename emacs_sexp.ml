@@ -12,13 +12,41 @@
 )* }}} *)
 
 type 'a t =
-    C of 'a t * 'a t  (** cons cell   *)
-  | S of string       (** 'sym        *)
-  | T of string       (** "text"      *)
-  | P of 'a t         (** #(property) *)
-  | I of int          (** 1           *)
-  | F of float        (** 1.0         *)
-  | M of 'a           (** user-defined construction, outside of s-exp language *)
+    C of 'a t * 'a t
+  | S of string
+  | T of string
+  | P of 'a t
+  | I of int
+  | F of float
+  | M of 'a
+
+type void
+let void (_ : void) = assert false
+
+let transform_list ~inj ~map t =
+  let rec aux = function
+    | S _ | T _ | I _ | F _ as t' -> map t'
+    | C (a, b) -> map (C (aux a, aux_cons b))
+    | P a -> map (P (aux a))
+    | M x -> inj x
+  and aux_cons = function
+    | C (a, b) -> C (aux a, aux_cons b)
+    | S "nil" as t -> t
+    | t -> aux t
+  in
+  aux t
+
+let transform_cons ~inj ~map t =
+  let rec aux = function
+    | S _ | T _ | I _ | F _ as t' -> map t'
+    | C (a, b) -> map (C (aux a, aux b))
+    | P a -> map (P (aux a))
+    | M x -> inj x
+  in
+  aux t
+
+
+type sexp = void t
 
 let t = S "t"
 let nil = S "nil"
@@ -27,29 +55,29 @@ let rec sexp_of_list = function
   | [] -> nil
   | a :: tl -> C (a, sexp_of_list tl)
 
-let rec tell_sexp (tell : _ -> unit) ~meta sexp =
-  match meta sexp with
+let rec tell_sexp (tell : _ -> unit) sexp =
+  match sexp with
   | C (a,b) ->
     tell "(";
-    tell_sexp tell ~meta a;
-    tell_cons tell ~meta b
+    tell_sexp tell a;
+    tell_cons tell b
   | T s -> tell ("\"" ^ String.escaped s ^ "\"")
   | S s -> tell (String.escaped s)
   | I i -> tell (string_of_int i)
   | F f -> tell (string_of_float f)
-  | P s -> tell "#"; tell_sexp ~meta tell s
-  | M _ -> invalid_arg "meta should have eliminated all (M _)"
+  | P s -> tell "#"; tell_sexp tell s
+  | M v -> void v
 
 
-and tell_cons ~meta tell = function
+and tell_cons tell = function
   | S "nil" -> tell ")"
   | C (a,b) ->
     tell " ";
-    tell_sexp tell ~meta a;
-    tell_cons tell ~meta b
+    tell_sexp tell a;
+    tell_cons tell b
   | sexp ->
     tell " . ";
-    tell_sexp tell ~meta sexp;
+    tell_sexp tell sexp;
     tell ")"
 
 let is_alpha c =
@@ -61,7 +89,7 @@ let is_num c =
 
 let is_alphanum c = is_alpha c || is_num c
 
-let read_sexp getch ~meta =
+let read_sexp getch =
   let buf = Buffer.create 10 in
   let rec read_sexp = function
     | ' ' | '\t' | '\n' ->
@@ -82,17 +110,17 @@ let read_sexp getch ~meta =
 
     | '#' ->
       let t, c = read_sexp (getch ()) in
-      meta (P t), c
+      P t, c
 
     | _ -> failwith "Invalid parse"
 
   and read_cons cells = function
     | ' ' | '\t' | '\n' -> read_cons cells (getch ())
-    | ')' -> meta (sexp_of_list (List.rev cells)), '\000'
+    | ')' -> sexp_of_list (List.rev cells), '\000'
     | '.' ->
       let rhs, c = read_sexp (getch ()) in
       let rec aux = function
-        | ')' -> meta (sexp_of_list (List.rev (rhs :: cells)))
+        | ')' -> sexp_of_list (List.rev (rhs :: cells))
         | ' ' | '\t' | '\n' -> aux (getch ())
         | _ -> failwith "Invalid parse"
       in
@@ -114,9 +142,9 @@ let read_sexp getch ~meta =
         Buffer.add_char buf c; aux true
       | c ->
         let s = Buffer.contents buf in
-        meta (if is_float
-              then F (float_of_string s)
-              else I (int_of_string s)),
+        (if is_float
+         then F (float_of_string s)
+         else I (int_of_string s)),
         c
     in
     aux false
@@ -130,7 +158,7 @@ let read_sexp getch ~meta =
         Buffer.add_char buf (getch ());
         aux (getch ())
       | '"' ->
-        meta (T (Scanf.unescaped (Buffer.contents buf))), '\000'
+        T (Scanf.unescaped (Buffer.contents buf)), '\000'
       | c ->
         Buffer.add_char buf c;
         aux (getch ())
@@ -149,18 +177,18 @@ let read_sexp getch ~meta =
       | '\\' ->
         Buffer.add_char buf (getch ());
         aux (getch ())
-      | c -> meta (S (Buffer.contents buf)), c
+      | c -> S (Buffer.contents buf), c
     in
     aux (if c = '\000' then getch() else c)
   in
   read_sexp (getch ())
 
-let to_buf ~meta sexp buf =
-  tell_sexp (Buffer.add_string buf) ~meta sexp
+let to_buf sexp buf =
+  tell_sexp (Buffer.add_string buf) sexp
 
-let to_string ~meta sexp =
+let to_string sexp =
   let buf = Buffer.create 100 in
-  to_buf ~meta sexp buf;
+  to_buf sexp buf;
   Buffer.contents buf
 
 let getch_of_substring str pos len =
@@ -180,10 +208,10 @@ let getch_of_substring str pos len =
 let getch_of_string str =
   getch_of_substring str 0 (String.length str)
 
-let of_string ~meta str =
-  fst (read_sexp (getch_of_string str) ~meta)
+let of_string str =
+  fst (read_sexp (getch_of_string str))
 
-let of_file_descr ~on_read fd ~meta =
+let of_file_descr ~on_read fd =
   let getch = ref (fun () -> '\000') in
   let rest = ref '\000' in
   let buffer = Bytes.create 1024 in
@@ -206,12 +234,12 @@ let of_file_descr ~on_read fd ~meta =
   in
   fun () ->
     try
-      let sexp, rest' = read_sexp getch ~meta in
+      let sexp, rest' = read_sexp getch in
       rest := rest';
       Some sexp
     with End_of_file -> None
 
-let of_channel ic ~meta =
+let of_channel ic =
   let getch = ref (fun () -> '\000') in
   let rest = ref '\000' in
   let buffer = Bytes.create 1024 in
@@ -233,7 +261,7 @@ let of_channel ic ~meta =
   in
   fun () ->
     try
-      let sexp, rest' = read_sexp getch ~meta in
+      let sexp, rest' = read_sexp getch in
       rest := rest';
       Some sexp
     with End_of_file -> None
