@@ -1,10 +1,3 @@
-(require 'tq)
-
-(defvar-local serge--process nil "The serge process for this buffer.")
-
-(defvar-local serge--process-queue nil
-  "The transaction queue for the local process (only valid in a process buffer).")
-
 (defcustom serge-debug nil
   "Dump I/O to message buffer")
 
@@ -12,26 +5,32 @@
   (when serge-debug
     (message "%s %s" prefix content)))
 
+(defun serge--filter (proc lines)
+  (setq lines (split-string lines "\n"))
+  (if (not (cdr lines))
+      (process-put proc 'serge-lines
+                   (cons (car lines) (process-get proc 'serge-lines)))
+    (setcar lines (mapconcat 'identity
+                             (reverse (cons (car lines)
+                                            (process-get proc 'serge-lines)))
+                             "\n"))
+    (let ((lines lines))
+      (while (cdr (cdr lines)) (setq lines (cdr lines)))
+      (process-put proc 'serge-lines (cdr lines))
+      (setcdr lines nil))
+    (dolist (line lines)
+      (with-demoted-errors "reading serge input: %S"
+        (serge--debug ">" line)
+        (serge--handler proc line)))))
+
 ;; COMMUNICATION
 
-(defvar-local serge--counter 0 "Gensym facility for generating addresse")
-
-(defun serge--gensym ()
-  (setq serge--counter (1+ serge--counter))
-  serge--counter)
-
-(defvar-local serge--dispatch-table nil "Table storing addresses to dispatch on")
-(defvar-local serge-query-handler 'serge--cancel-high
-  "Function invoked when receiving query")
-
-(defun serge--dispatch-table ()
-  (unless serge--dispatch-table
-    (setq serge--dispatch-table (make-hash-table)))
-  serge--dispatch-table)
-
-(defun serge--dispatch-register (obj)
-  (let ((key (serge--gensym)))
-    (puthash key obj (serge--dispatch-table))
+(defun serge--register (process obj)
+  ;; gensym
+  (let* ((table (process-get process 'serge-table))
+         (key (car table)))
+    (setcar table (1+ key))
+    (puthash key obj (cdr table))
     (cons (car obj) key)))
 
 ;; MANAGE ENHANCED SEXP
@@ -40,125 +39,134 @@
   (or (eq sym 'once) (eq sym 'sink)))
 
 (defun serge--cancel-high (sexp)
+  (message "cancelling %S" sexp)
   (cond
    ((and (serge--sym-is-action (car-safe sexp)) 
          (functionp (cdr-safe sexp)))
     (with-demoted-errors "cancelling closure %S"
-      ((cdr-safe exp) '(abort . cancel))))
+      (funcall (cdr-safe sexp) '(abort . cancel))))
    ((eq (car-safe sexp) 'meta) nil)
    ((consp sexp)
     (serge--cancel-high (car sexp))
     (serge--cancel-high (cdr sexp)))
    (t nil)))
 
-(defun serge--lower (sexp)
+(defun serge--lower (process sexp)
   (cond
    ((and (serge--sym-is-action (car-safe sexp)) 
          (functionp (cdr-safe sexp)))
-    (cons 'meta (serge--dispatch-register sexp)))
+    (cons 'meta (serge--register process sexp)))
    ((eq (car-safe sexp) 'meta)
     (cons 'meta (cons 'escape (cdr-safe sexp))))
    ((consp sexp)
-    (cons (serge--lower (car sexp))
-          (serge--lower (cdr sexp))))
+    (cons (serge--lower process (car sexp))
+          (serge--lower process (cdr sexp))))
    (t sexp)))
 
-(defun serge--lift (kind addr)
-  (lexical-let ((addr addr) (state t))
-    (cons kind
-          (lambda (v) (cond
-                       ((not state)
-                        (serge--cancel-high v))
-                       ((eq v 'close)
-                        (setq state nil)
-                        (serge--send (cons 'close addr)))
-                       ((eq (car-safe v) 'abort)
-                        (setq state nil)
-                        (serge--send (cons 'abort (cons addr (cdr v)))))
-                       (t
-                        (when (eq kind 'one) (setq state nil))
-                        (serge--send (cons 'feed (cons addr (serge--lower v)))))
-                       )))))
+(defun serge--lift (process kind addr)
+  (lexical-let ((addr addr) (state t) (process process) (kind kind))
+    (cons
+     kind
+     (lambda (v)
+       (cond
+        ((not state)
+         (serge--cancel-high v))
+        ((eq v 'close)
+         (setq state nil)
+         (serge--send process (cons 'close addr)))
+        ((eq (car-safe v) 'abort)
+         (setq state nil)
+         (serge--send process (cons 'abort (cons addr (cdr v)))))
+        (t
+         (when (eq kind 'one) (setq state nil))
+         (serge--send process (cons 'feed (cons addr (serge--lower process v)))))
+        )))))
 
-(defun serge--cancel-low (sexp)
+(defun serge--cancel-low (process sexp)
   (cond
    ((and (eq (car-safe sexp) 'meta)
          (eq (car-safe (cdr sexp)) 'escape))
     nil)
    ((and (eq (car-safe sexp) 'meta)
          (serge--sym-is-action (car-safe (cdr sexp))))
-    (serge--send (cons 'abort (cons (cddr sexp) 'cancel))))
+    (serge--send process (cons 'abort (cons (cddr sexp) 'cancel))))
    ((consp sexp)
-    (serge--cancel-low (car sexp))
-    (serge--cancel-low (cdr sexp)))
+    (serge--cancel-low process (car sexp))
+    (serge--cancel-low process (cdr sexp)))
    (t nil)))
 
-(defun serge--higher (sexp)
+(defun serge--higher (process sexp)
   (cond
    ((and (eq (car-safe sexp) 'meta)
          (eq (car-safe (cdr sexp)) 'escape))
     (cons 'meta (cddr sexp)))
    ((and (eq (car-safe sexp) 'meta)
          (serge--sym-is-action (car-safe (cdr sexp))))
-    (serge--lift (cadr sexp) (cddr sexp)))
+    (serge--lift process (cadr sexp) (cddr sexp)))
    ((consp sexp)
-    (cons (serge--lower (car sexp))
-          (serge--lower (cdr sexp))))
+    (cons (serge--higher process (car sexp))
+          (serge--higher process (cdr sexp))))
    (t sexp)))
 
 ;; PROCESS MANAGEMENT
 
-(defun serge--wake-up (addr kind payload)
-  (let (handler (gethash addr (serge--dispatch-table)))
+(defun serge--wake-up (process addr kind payload)
+  (let* ((table (process-get process 'serge-table))
+         (handler (gethash addr (cdr table)))
+         (fn (cdr handler)))
     (when (or (eq 'once (car handler))
-              (eq 'abort kind)
-              (eq 'close kind))
-      (remhash addr (serge--dispatch-table)))
-    ((cdr handler) kind payload)))
+              (member kind '(abort close)))
+      (remhash addr (cdr table)))
+    (funcall fn kind payload)))
 
-(defun serge--handler (answer)
+(defun serge--handler (process answer)
   (setq answer (car (read-from-string answer)))
   (let ((cmd (car-safe answer))
-        (addr (car-safe (cdr-safe answer)))
-        (payload (cdr-safe (cdr-safe answer))))
+        (payload (cdr-safe answer)))
     (cond
      ((eq cmd 'query)
-      (funcall serge-query-handler (serge--higher payload)))
-     ((or (eq cmd 'feed) (eq cmd 'abort) (eq cmd 'close))
-      (with-demoted-errors "wakeup %S"
-        (when (eq cmd 'feed)
-          (setq payload (serge--higher payload)))
-        (serge--wake-up addr cmd payload)))
+      (funcall (process-get process 'serge-handler)
+               (serge--higher process (cdr-safe answer))))
+     ((eq cmd 'feed)
+      (with-demoted-errors "feed %S"
+        (serge--wake-up process
+                        (car payload) 'feed
+                        (serge--higher process (cdr payload)))))
+     ((eq cmd 'abort)
+      (with-demoted-errors "abort %S"
+        (serge--wake-up process
+                        (car payload) 'abort (cdr payload))))
+     ((eq cmd 'close)
+      (with-demoted-errors "close %S"
+        (serge--wake-up process payload 'close nil)))
      ((eq answer 'end)
       ;; FIXME
       t)
-     (t (serge--cancel-low answer)))))
+     (t (serge--cancel-low process answer)))))
 
-(defun serge--resident-handler (closure answer)
-  (serge--debug ">" answer)
-  (tq-enqueue serge--process-queue "" "\n" nil #'serge--resident-handler)
-  (serge--handler answer))
-
-(defun serge--send (command)
+(defun serge--send (process command)
   (setq command (prin1-to-string command))
   (serge--debug "<" command)
-  (process-send-string serge--process command)
-  (process-send-string serge--process "\n"))
+  (process-send-string process command)
+  (process-send-string process "\n"))
 
-(defun serge--start-process (args)
-  "Collection of workarounds for starting process"
-  (when (and serge--process (equal (process-status serge--process) 'run))
-    (with-demoted-errors "serge--start-process: %S"
-      (tq-close merlin-process-queue)
-      (kill-process merlin-process)))
+(defun serge-start (process &optional handler)
+  (process-put process 'serge-lines nil)
+  (process-put process 'serge-handler (or handler #'serge--cancel-high))
+  (process-put process 'serge-table (cons 0 (make-hash-table)))
+  (set-process-filter process #'serge--filter)
+  process)
+
+(defun serge-query (process query)
+  (serge--send process (cons 'query (serge--lower process query))))
+
+(defun serge-start-process (name buffer path args &optional handler)
   (let* ((start-file-process
-          (if (boundp 'start-file-process)
+          (if (fboundp 'start-file-process)
               #'start-file-process
             #'start-process))
-         (process-connection-type nil))
-    (setq serge--process (apply start-file-process args))
-    (setq serge--process-queue (tq-create serge--process))
-    (tq-enqueue serge--process-queue "" "\n" nil
-                #'serge--resident-handler)))
+         (process-connection-type nil)
+         (process (apply start-file-process name buffer path args)))
+    (serge-start process handler)))
 
 (provide 'serge)
