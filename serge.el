@@ -23,6 +23,51 @@
         (serge--debug ">" line)
         (serge--handler proc line)))))
 
+;; GARBAGE COLLECTION
+
+(defvar serge--processes nil)
+
+(defun serge--root-register (process addr value)
+  (let* ((roots (process-get process 'serge-roots))
+           (addrs (car roots))
+           (weaks (cdr roots)))
+    (puthash addr t     addrs)
+    (puthash addr value weaks)
+    value))
+
+(defun serge--root-alive (process addr)
+  (gethash addr (car (process-get process 'serge-roots))))
+
+(defun serge--root-remove (process addr)
+  (let* ((roots (process-get process 'serge-roots))
+         (addrs (car roots))
+         (weaks (cdr roots)))
+    (remhash addr addrs)
+    (remhash addr weaks)))
+
+(defun serge--collect-roots ()
+  (dolist (process serge--processes)
+    (let* ((roots (process-get process 'serge-roots))
+           (addrs (car roots))
+           (weaks (cdr roots)))
+      (maphash
+       (lambda (addr v)
+         (unless (gethash addr weaks)
+           (remhash addr addrs)
+           (ignore-errors
+             (serge--send process (cons 'abort (cons addr 'finalize)))))))
+      addrs)))
+
+(defun serge--gc-hook ()
+  (setq serge--processes
+        (delete-if (lambda (process)
+                     (member (process-status process)
+                             '(exit signal closed failed nil)))
+                   serge--processes))
+  (run-at-time 0 nil #'serge--collect-roots))
+
+(add-hook 'post-gc-hook 'serge--gc-hook)
+
 ;; COMMUNICATION
 
 (defun serge--register (process obj)
@@ -64,23 +109,25 @@
    (t sexp)))
 
 (defun serge--lift (process kind addr)
-  (lexical-let ((addr addr) (state t) (process process) (kind kind))
+  (lexical-let ((addr addr) (process process) (kind kind))
     (cons
      kind
-     (lambda (v)
-       (cond
-        ((not state)
-         (serge--cancel-high v))
-        ((eq v 'close)
-         (setq state nil)
-         (serge--send process (cons 'close addr)))
-        ((eq (car-safe v) 'abort)
-         (setq state nil)
-         (serge--send process (cons 'abort (cons addr (cdr v)))))
-        (t
-         (when (eq kind 'one) (setq state nil))
-         (serge--send process (cons 'feed (cons addr (serge--lower process v)))))
-        )))))
+     (serge--root-register
+      process addr
+      (lambda (v)
+        (cond
+         ((not (serge--root-alive process addr))
+          (serge--cancel-high v))
+         ((eq v 'close)
+          (serge--root-remove process addr)
+          (serge--send process (cons 'close addr)))
+         ((eq (car-safe v) 'abort)
+          (serge--root-remove process addr)
+          (serge--send process (cons 'abort (cons addr (cdr v)))))
+         (t
+          (when (eq kind 'once) (serge--root-remove process addr))
+          (serge--send process (cons 'feed (cons addr (serge--lower process v)))))
+         ))))))
 
 (defun serge--cancel-low (process sexp)
   (cond
@@ -151,10 +198,16 @@
   (process-send-string process "\n"))
 
 (defun serge-start (process &optional handler)
-  (process-put process 'serge-lines nil)
-  (process-put process 'serge-handler (or handler #'serge--cancel-high))
-  (process-put process 'serge-table (cons 0 (make-hash-table)))
-  (set-process-filter process #'serge--filter)
+  (if (process-get process 'serge-handler)
+      (process-put process 'serge-handler (or handler #'serge--cancel-high))
+    (process-put process 'serge-lines nil)
+    (process-put process 'serge-handler (or handler #'serge--cancel-high))
+    (process-put process 'serge-table (cons 0 (make-hash-table)))
+    (process-put process 'serge-roots
+                 (cons (make-hash-table)
+                       (make-hash-table :weakness 'value)))
+    (set-process-filter process #'serge--filter)
+    (setq serge--processes (cons process serge--processes)))
   process)
 
 (defun serge-query (process query)
