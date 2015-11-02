@@ -55,8 +55,8 @@
          (unless (gethash addr weaks)
            (remhash addr addrs)
            (ignore-errors
-             (serge--send process (cons 'abort (cons addr 'finalize)))))))
-      addrs)))
+             (serge--send process (cons 'abort (cons addr 'finalize))))))
+       addrs))))
 
 (defun serge--gc-hook ()
   (setq serge--processes
@@ -83,7 +83,7 @@
 (defun serge--sym-is-action (sym)
   (or (eq sym 'once) (eq sym 'sink)))
 
-(defun serge--cancel-high (sexp)
+(defun serge-cancel (sexp)
   (message "cancelling %S" sexp)
   (cond
    ((and (serge--sym-is-action (car-safe sexp)) 
@@ -92,8 +92,8 @@
       (funcall (cdr-safe sexp) '(abort . cancel))))
    ((eq (car-safe sexp) 'meta) nil)
    ((consp sexp)
-    (serge--cancel-high (car sexp))
-    (serge--cancel-high (cdr sexp)))
+    (serge-cancel (car sexp))
+    (serge-cancel (cdr sexp)))
    (t nil)))
 
 (defun serge--lower (process sexp)
@@ -114,23 +114,22 @@
      kind
      (serge--root-register
       process addr
-      (lambda (v)
+      (lambda (msg v)
         (cond
          ((not (serge--root-alive process addr))
-          (serge--cancel-high v))
-         ((eq v 'close)
+          (serge-cancel v))
+         ((eq msg 'close)
           (serge--root-remove process addr)
           (serge--send process (cons 'close addr)))
-         ((eq (car-safe v) 'abort)
+         ((eq msg 'abort)
           (serge--root-remove process addr)
-          (serge--send process (cons 'abort (cons addr (cdr v)))))
+          (serge--send process (cons 'abort (cons addr v))))
          (t
           (when (eq kind 'once) (serge--root-remove process addr))
           (serge--send process (cons 'feed (cons addr (serge--lower process v)))))
          ))))))
 
-(defun serge--cancel-low (process sexp)
-  (cond
+(defun serge--cancel-low (process sexp) (cond
    ((and (eq (car-safe sexp) 'meta)
          (eq (car-safe (cdr sexp)) 'escape))
     nil)
@@ -157,14 +156,14 @@
 
 ;; PROCESS MANAGEMENT
 
-(defun serge--wake-up (process addr kind payload)
+(defun serge--wake-up (process addr msg payload)
   (let* ((table (process-get process 'serge-table))
          (handler (gethash addr (cdr table)))
          (fn (cdr handler)))
     (when (or (eq 'once (car handler))
-              (member kind '(abort close)))
+              (member msg '(abort close)))
       (remhash addr (cdr table)))
-    (funcall fn kind payload)))
+    (funcall fn msg payload)))
 
 (defun serge--handler (process answer)
   (setq answer (car (read-from-string answer)))
@@ -199,9 +198,9 @@
 
 (defun serge-start (process &optional handler)
   (if (process-get process 'serge-handler)
-      (process-put process 'serge-handler (or handler #'serge--cancel-high))
+      (process-put process 'serge-handler (or handler #'serge-cancel))
     (process-put process 'serge-lines nil)
-    (process-put process 'serge-handler (or handler #'serge--cancel-high))
+    (process-put process 'serge-handler (or handler #'serge-cancel))
     (process-put process 'serge-table (cons 0 (make-hash-table)))
     (process-put process 'serge-roots
                  (cons (make-hash-table)
