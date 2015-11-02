@@ -4,7 +4,8 @@ all: byte-code-library native-code-library
 SOURCES = \
 	emacs_sexp.mli emacs_sexp.ml \
 	emacs_serge.mli emacs_serge.ml \
-	emacs_hyperprint.mli emacs_hyperprint.ml
+	emacs_hyperprint.mli emacs_hyperprint.ml \
+	emacs_hypernav.mli emacs_hypernav.ml
 
 RESULT = emacs_serge
 

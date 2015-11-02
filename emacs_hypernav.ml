@@ -47,7 +47,7 @@ let navigator cursor label content =
   let header = sub cursor in
   text cursor " ";
   let title = sub cursor in
-  text cursor "\n";
+  text cursor "\n\n";
   let body = sub cursor in
   let t = { prev = []; page = (label, content); next = []; title; body } in
   render_header t header;
