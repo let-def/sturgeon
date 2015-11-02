@@ -51,9 +51,12 @@ type basic = void sexp
 let sym_t = S "t"
 let sym_nil = S "nil"
 
-let rec sexp_of_list = function
-  | [] -> sym_nil
-  | a :: tl -> C (a, sexp_of_list tl)
+let sexp_of_list ?(tail=sym_nil) l =
+  let rec aux =  function
+    | [] -> tail
+    | a :: tl -> C (a, aux tl)
+  in
+  aux l
 
 let rec tell_sexp (tell : _ -> unit) sexp =
   match sexp with
@@ -120,7 +123,7 @@ let read_sexp getch =
     | '.' ->
       let rhs, c = read_sexp (getch ()) in
       let rec aux = function
-        | ')' -> sexp_of_list (List.rev (rhs :: cells))
+        | ')' -> sexp_of_list ~tail:rhs (List.rev cells)
         | ' ' | '\t' | '\n' -> aux (getch ())
         | _ -> failwith "Invalid parse"
       in

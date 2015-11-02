@@ -40,7 +40,7 @@ val sym_t : 'a sexp
     []      -> nil
     x :: xs -> C (x, sexp_of_list xs)
 *)
-val sexp_of_list : 'a sexp list -> 'a sexp
+val sexp_of_list : ?tail:'a sexp -> 'a sexp list -> 'a sexp
 
 (** {1 Monomorphic Emacs S-exp format} *)
 
