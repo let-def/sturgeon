@@ -55,7 +55,7 @@
          (unless (gethash addr weaks)
            (remhash addr addrs)
            (ignore-errors
-             (serge--send process (cons 'abort (cons addr 'finalize))))))
+             (serge--send process (cons 'quit (cons addr 'finalize))))))
        addrs))))
 
 (defun serge--gc-hook ()
@@ -89,7 +89,7 @@
    ((and (serge--sym-is-action (car-safe sexp)) 
          (functionp (cdr-safe sexp)))
     (with-demoted-errors "cancelling closure %S"
-      (funcall (cdr-safe sexp) '(abort . cancel))))
+      (funcall (cdr-safe sexp) '(quit . cancel))))
    ((eq (car-safe sexp) 'meta) nil)
    ((consp sexp)
     (serge-cancel (car sexp))
@@ -118,12 +118,9 @@
         (cond
          ((not (serge--root-alive process addr))
           (serge-cancel v))
-         ((eq msg 'close)
+         ((eq msg 'quit)
           (serge--root-remove process addr)
-          (serge--send process (cons 'close addr)))
-         ((eq msg 'abort)
-          (serge--root-remove process addr)
-          (serge--send process (cons 'abort (cons addr v))))
+          (serge--send process (cons 'quit (cons addr v))))
          (t
           (when (eq kind 'once) (serge--root-remove process addr))
           (serge--send process (cons 'feed (cons addr (serge--lower process v)))))
@@ -135,7 +132,7 @@
     nil)
    ((and (eq (car-safe sexp) 'meta)
          (serge--sym-is-action (car-safe (cdr sexp))))
-    (serge--send process (cons 'abort (cons (cddr sexp) 'cancel))))
+    (serge--send process (cons 'quit (cons (cddr sexp) 'cancel))))
    ((consp sexp)
     (serge--cancel-low process (car sexp))
     (serge--cancel-low process (cdr sexp)))
@@ -160,8 +157,7 @@
   (let* ((table (process-get process 'serge-table))
          (handler (gethash addr (cdr table)))
          (fn (cdr handler)))
-    (when (or (eq 'once (car handler))
-              (member msg '(abort close)))
+    (when (or (eq 'once (car handler)) (eq msg 'quit))
       (remhash addr (cdr table)))
     (funcall fn msg payload)))
 
@@ -178,13 +174,11 @@
         (serge--wake-up process
                         (car payload) 'feed
                         (serge--higher process (cdr payload)))))
-     ((eq cmd 'abort)
-      (with-demoted-errors "abort %S"
+     ((eq cmd 'quit)
+      (with-demoted-errors "quit %S"
         (serge--wake-up process
-                        (car payload) 'abort (cdr payload))))
-     ((eq cmd 'close)
-      (with-demoted-errors "close %S"
-        (serge--wake-up process payload 'close nil)))
+                        (car payload) 'quit (cdr payload))))
+
      ((eq answer 'end)
       ;; FIXME
       t)

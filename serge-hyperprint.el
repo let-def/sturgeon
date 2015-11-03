@@ -28,7 +28,7 @@
     (cons
      'sink
      (lambda (kind value)
-       (when (member kind '(abort close))
+       (when (eq kind 'quit)
          (serge-hyperprint--clear-markers marker))
        (when (eq kind 'feed)
          (cond
