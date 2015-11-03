@@ -1,9 +1,8 @@
 open Emacs_sexp
 
 type 'a result =
-  | Feed  of 'a
-  | Close
-  | Abort of basic
+  | Feed of 'a
+  | Quit of basic
 
 type 'a neg = 'a result -> unit
 
@@ -17,18 +16,12 @@ let gensym () =
   let counter = ref 0 in
   fun () -> incr counter; !counter
 
-let close_message = S "end"
-let cancel_message = Abort (S "cancel")
-let finalize_message = Abort (S "finalize")
+let cancel_message = Quit (S "cancel")
+let finalize_message = Quit (S "finalize")
 
 let add_finalizer (dual : t neg) =
   let finalize f = f finalize_message in
   Gc.finalise finalize dual
-
-exception Invalid_message of basic
-
-let stderr ~exn msg =
-  prerr_endline (Printexc.to_string exn ^ ": " ^ msg)
 
 type endpoint = {
   stdout: basic -> unit;
@@ -36,26 +29,30 @@ type endpoint = {
 }
 
 (* Cancel : abort computation, release ressources  *)
-let cancel' ~stderr (t : t) : basic =
+let lower_cancel ?stderr (t : t) : basic =
+  let exns = ref [] in
   let map : basic -> basic = function
     | C (S "meta", x) -> C (S "meta", C (S "escape", x))
     | x -> x
   and inj (dual : dual) : basic =
-    begin try
-        let (Once t | Sink t) = dual in
-        t cancel_message
-      with exn ->
-        stderr ~exn "while cancelling message"
+    begin
+      let (Once t | Sink t) = dual in
+      try t cancel_message
+      with exn -> exns := exn :: !exns
     end;
-    let sym = match dual with
-      | Once _ -> S "once"
-      | Sink _ -> S "sink"
-    in
-    C (S "meta", C (sym, sym_nil))
+    match dual with
+    | Once _ -> C (S "meta", C (S "once", S "cancelled"))
+    | Sink _ -> C (S "meta", C (S "sink", S "cancelled"))
   in
-  transform_list ~inj ~map t
+  let result = transform_list ~inj ~map t in
+  if !exns <> [] then
+    (match stderr with
+     | Some f -> f (`Exceptions_during_cancellation (t, !exns))
+     | None -> ());
+  result
 
-let cancel ?(stderr=stderr) (t : t) =
+let cancel ?stderr (t : t) =
+  let exns = ref [] in
   let rec aux = function
     | C (a, b) -> aux a; aux b
     | P t -> aux t
@@ -63,12 +60,33 @@ let cancel ?(stderr=stderr) (t : t) =
     | I _ | F _ -> ()
     | M (Once t | Sink t) ->
       try t cancel_message
-      with exn ->
-        stderr ~exn "while cancelling message"
+      with exn -> exns := exn :: !exns
   in
-  aux t
+  let result = aux t in
+  if !exns <> [] then
+    (match stderr with
+     | Some f -> f (`Exceptions_during_cancellation (t, !exns))
+     | None -> ());
+  result
 
-let connect ?(stderr=stderr) {stdout; query} : endpoint =
+type 'a error =
+  [ `Already_closed  of t result
+  | `Query_after_eof of t
+  | `Invalid_command of basic
+  | `Feed_unknown    of basic
+  | `Quit_unknown    of basic
+  | `Exceptions_during_cancellation of t * exn list
+  | `Exceptions_during_shutdown of exn list
+  ]
+
+let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
+
+  let endpoint = ref {
+      query = (fun _ -> invalid_arg "Query before initialization");
+      stdout = (fun _ -> invalid_arg "Output before initialization");
+    }
+  in
+
   let eof = ref false in
 
   let gensym = gensym () in
@@ -90,7 +108,7 @@ let connect ?(stderr=stderr) {stdout; query} : endpoint =
       in
       C (S "meta", C (sym, I addr))
     in
-    transform_list ~inj ~map t
+    transform_cons ~inj ~map t
   in
 
   (* Upper: inject closures into ground sexp *)
@@ -100,31 +118,32 @@ let connect ?(stderr=stderr) {stdout; query} : endpoint =
       | C (S "meta", C (S "escape", x)) ->
         C (S "meta", x)
       | C (S "meta", C (S ("once" | "sink" as kind), addr)) ->
-        let addr = cancel' ~stderr addr in
+        let addr = lower_cancel ?stderr addr in
         let is_once = kind = "once" in
         let closed = ref false in
         let dual msg =
           if !eof then
             match msg with
-            | Feed x -> cancel ~stderr x
-            | Abort _ | Close -> ()
+            | Feed x -> cancel ?stderr x
+            | Quit _ -> ()
           else if !closed then
             if msg == finalize_message then ()
-            else raise (Invalid_message (match msg with
-                | Abort b -> C (S "abort", b)
-                | Close -> S "close"
-                | Feed x -> C (S "feed", cancel' ~stderr x)
-              ))
+            else begin
+              begin match msg with
+                | Feed x -> cancel ?stderr x
+                | Quit _ -> ()
+              end;
+              match stderr with
+              | Some f -> f (`Already_closed msg)
+              | None -> ()
+            end
           else match msg with
             | Feed x ->
               closed := is_once;
-              stdout (C (S "feed" , C (addr, lower x)))
-            | Close ->
+              (!endpoint).stdout (C (S "feed", C (addr, lower x)))
+            | Quit x ->
               closed := true;
-              stdout (C (S "close", addr))
-            | Abort x ->
-              closed := true;
-              stdout (C (S "abort", C (addr, x)))
+              (!endpoint).stdout (C (S "quit", C (addr, x)))
         in
         add_finalizer dual;
         M (if is_once then Once dual else Sink dual)
@@ -139,13 +158,13 @@ let connect ?(stderr=stderr) {stdout; query} : endpoint =
     | _ -> raise Not_found
   in
 
-  {
+  let t = {
     stdout = begin
       if !eof then ignore
       else function
         | C (S "query", payload) ->
-          query (upper payload)
-        | C (S "feed" , C (addr, payload)) ->
+          (!endpoint).query (upper payload)
+        | C (S "feed", C (addr, payload)) as msg ->
           let x = upper payload in
           begin match get_addr addr with
             | addr, Once t ->
@@ -153,39 +172,56 @@ let connect ?(stderr=stderr) {stdout; query} : endpoint =
               t (Feed x)
             | _, Sink t -> t (Feed x)
             | exception Not_found ->
-              cancel ~stderr x
+              cancel ?stderr x;
+              begin match stderr with
+                | Some f -> f (`Feed_unknown msg)
+                | None -> ()
+              end
           end
-        | C (S "abort" , C (addr, x)) ->
+        | C (S "quit", C (addr, x)) as msg ->
           begin match get_addr addr with
             | addr, (Once t | Sink t) ->
               Hashtbl.remove table addr;
-              t (Abort x)
+              t (Quit x)
             | exception Not_found ->
-              (* FIXME: Not_found *) ()
-          end
-        | C (S "close"    , addr) ->
-          begin match get_addr addr with
-            | addr, (Once t | Sink t) ->
-              Hashtbl.remove table addr;
-              t Close
-            | exception Not_found ->
-              (* FIXME: Not_found *) ()
+              begin match stderr with
+                | Some f -> f (`Quit_unknown msg)
+                | None -> ()
+              end
           end
         | S "end" ->
           eof := true;
-          stdout (S "end");
+          let exns = ref [] in
           Hashtbl.iter (fun _ (Sink t | Once t) ->
               try t cancel_message
-              with _ -> (* FIXME: exn *) ()
+              with exn -> exns := exn :: !exns
             ) table;
-          Hashtbl.reset table
-        | _ -> invalid_arg "Unhandled command"
+          Hashtbl.reset table;
+          if !exns <> [] then
+            begin match stderr with
+              | Some f -> f (`Exceptions_during_shutdown !exns)
+              | None -> ()
+            end
+        | cmd ->
+          begin match stderr with
+            | Some f -> f (`Invalid_command cmd)
+            | None -> ()
+          end
     end;
 
     query = begin fun t ->
-      if !eof then cancel ~stderr t
-      else stdout (C (S "query", lower t))
+      if !eof then (
+        cancel ?stderr t;
+        match stderr with
+        | None -> ()
+        | Some f -> f (`Query_after_eof t)
+      ) else
+        (!endpoint).stdout (C (S "query", lower t))
     end
-  }
 
-let close endpoint = endpoint.stdout close_message
+  } in
+
+  endpoint := f_endpoint ~remote_query:t.query;
+  t
+
+let close endpoint = endpoint.stdout (S "end")
