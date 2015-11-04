@@ -5,6 +5,7 @@ type cursor
 val text : cursor -> ?properties:basic -> string -> unit
 val clear : cursor -> unit
 val sub : ?action:(cursor -> unit) -> cursor -> cursor
+val is_closed : cursor -> bool
 
 val link : cursor -> ?properties:basic -> string -> (cursor -> unit) -> unit
 val printf : cursor -> ?properties:basic -> ('a, unit, string, unit) format4 -> 'a
