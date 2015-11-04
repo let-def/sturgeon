@@ -23,6 +23,40 @@
         (serge--debug ">" line)
         (serge--handler proc line)))))
 
+;; FACILITIES FOR WORKING WITH NEGATIONS
+
+(defmacro lambda-once (args &rest body)
+  `(cons 'once (lambda ,args ,@body)))
+
+(defmacro lambda-sink (args &rest body)
+  `(cons 'sink (lambda ,args ,@body)))
+
+(put 'lambda-once 'lisp-indent-function 'defun)
+(put 'lambda-sink 'lisp-indent-function 'defun)
+
+(defun serge--app-p (sexp)
+  (and (consp sexp)
+       (functionp (cdr sexp))
+       (member (car sexp) '(once sink))))
+
+(defun app-once (f arg)
+  (assert (serge--app-p f))
+  (assert (eq (car f) 'once))
+  (funcall (cdr f) 'feed arg))
+  
+(defun app-sink (f arg)
+  (assert (serge--app-p f))
+  (assert (eq (car f) 'sink))
+  (funcall (cdr f) 'feed arg))
+
+(defun app-any (f arg)
+  (assert (serge--app-p f))
+  (funcall (cdr f) 'feed arg))
+
+(defun app-quit (f &optional arg)
+  (assert (serge--app-p f))
+  (funcall (cdr f) 'quit arg))
+
 ;; GARBAGE COLLECTION
 
 (defvar serge--processes nil)
@@ -80,16 +114,12 @@
 
 ;; MANAGE ENHANCED SEXP
 
-(defun serge--sym-is-action (sym)
-  (or (eq sym 'once) (eq sym 'sink)))
-
 (defun serge-cancel (sexp)
   (message "cancelling %S" sexp)
   (cond
-   ((and (serge--sym-is-action (car-safe sexp)) 
-         (functionp (cdr-safe sexp)))
+   ((serge--app-p sexp)
     (with-demoted-errors "cancelling closure %S"
-      (funcall (cdr-safe sexp) '(quit . cancel))))
+      (app-quit sexp 'cancel)))
    ((eq (car-safe sexp) 'meta) nil)
    ((consp sexp)
     (serge-cancel (car sexp))
@@ -98,8 +128,7 @@
 
 (defun serge--lower (process sexp)
   (cond
-   ((and (serge--sym-is-action (car-safe sexp)) 
-         (functionp (cdr-safe sexp)))
+   ((serge--app-p sexp)
     (cons 'meta (serge--register process sexp)))
    ((eq (car-safe sexp) 'meta)
     (cons 'meta (cons 'escape (cdr-safe sexp))))
@@ -131,7 +160,7 @@
          (eq (car-safe (cdr sexp)) 'escape))
     nil)
    ((and (eq (car-safe sexp) 'meta)
-         (serge--sym-is-action (car-safe (cdr sexp))))
+         (member (car-safe (cdr sexp)) '(once sink)))
     (serge--send process (cons 'quit (cons (cddr sexp) 'cancel))))
    ((consp sexp)
     (serge--cancel-low process (car sexp))
@@ -144,7 +173,7 @@
          (eq (car-safe (cdr sexp)) 'escape))
     (cons 'meta (cddr sexp)))
    ((and (eq (car-safe sexp) 'meta)
-         (serge--sym-is-action (car-safe (cdr sexp))))
+         (member (car-safe (cdr sexp)) '(once sink)))
     (serge--lift process (cadr sexp) (cddr sexp)))
    ((consp sexp)
     (cons (serge--higher process (car sexp))
