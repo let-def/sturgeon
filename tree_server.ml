@@ -21,19 +21,21 @@ let endpoint = connect @@ fun ~remote_query:_ ->
 
 let reader = Emacs_sexp.of_channel stdin
 
+let rec children prefix t =
+  for i = 0 to 9 do
+    let label = prefix ^ string_of_int i in
+    Emacs_hyperprint.text
+      (Emacs_htree.add t ~children:(children label))
+      label
+  done
 
 let () =
   let open Emacs_hyperprint in
   Emacs_hypernav.navigator (open_buffer endpoint "nav-server")
     "Epimenide"
   @@ fun nav ~title ~body ->
-  text body "Je mens.\n\n";
-  link body "- C'est vrai.\n"
-    (fun _ -> Emacs_hypernav.goto nav "C'est vrai !" @@
-      fun nav ~title ~body -> text body "C'est faux.");
-  link body "- C'est faux.\n"
-    (fun _ -> Emacs_hypernav.goto nav "C'est faux !" @@
-      fun nav ~title ~body -> text body "C'est vrai.")
+  text body "\n";
+  children "/" (Emacs_htree.make body)
 
 let rec loop () =
   flush_all ();

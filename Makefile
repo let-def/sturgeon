@@ -25,3 +25,10 @@ uninstall: libuninstall
 reinstall:
 	-$(MAKE) uninstall
 	$(MAKE) install
+
+EXAMPLES = echo_server fib_server nav_server print_server tree_server
+
+examples: $(EXAMPLES)
+
+$(EXAMPLES): ncl
+	ocamlopt -o $@ unix.cmxa emacs_serge.cmxa $@.ml
