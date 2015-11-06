@@ -64,9 +64,9 @@
                              (point0 (point)))
                          (when action (insert serge--invisible-text))
                          (serge-hyperprint--make-cursor buffer (point) (cadr value))
-                         (make-button point0 (1- (cadr marker))
-                                      'action #'serge-hyperprint--cursor-action
-                                      'serge-action action))
+                         (when action (make-button point0 (1- (cadr marker))
+                                                   'action #'serge-hyperprint--cursor-action
+                                                   'serge-action action)))
                        (goto-char (1- (cadr marker))))))
 
                   (t (serge-cancel value))))))))
