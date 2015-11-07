@@ -35,8 +35,8 @@ let compare a b =
   else
     let rec aux = function
       | [] -> assert false
-      | (_,x) :: _ when x == a -> 1
-      | (_,x) :: _ when x == b -> -1
+      | (_,x) :: _ when x == a -> -1
+      | (_,x) :: _ when x == b -> 1
       | _ :: xs -> aux xs
     in
     aux a.buffer.cursors

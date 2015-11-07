@@ -44,7 +44,7 @@ let lower_cancel ?stderr (t : t) : basic =
     | Once _ -> C (S "meta", C (S "once", S "cancelled"))
     | Sink _ -> C (S "meta", C (S "sink", S "cancelled"))
   in
-  let result = transform_list ~inj ~map t in
+  let result = transform_cons ~inj ~map t in
   if !exns <> [] then
     (match stderr with
      | Some f -> f (`Exceptions_during_cancellation (t, !exns))
@@ -150,7 +150,7 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
       | x -> x
     and inj : void -> t = void
     in
-    transform_list ~inj ~map t
+    transform_cons ~inj ~map t
   in
 
   let get_addr = function
