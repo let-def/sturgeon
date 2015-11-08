@@ -1,26 +1,29 @@
 type 'a t = {
   mutable cursors: (int * 'a cursor) list;
   on_invalidate: 'a cursor -> unit;
+  root: OrderList.t;
 }
 
 and 'a cursor = {
   buffer: 'a t;
   content: 'a;
-  mutable valid: bool;
+  position: OrderList.t;
 }
 
 let create ?(on_invalidate=ignore) () = {
   cursors = [];
   on_invalidate;
+  root = OrderList.root ();
 }
 
 let buffer c = c.buffer
 let content c = c.content
 
-let valid c = c.valid
+let valid c = OrderList.is_valid c.position
+
 let forget c =
   c.buffer.on_invalidate c;
-  c.valid <- false
+  OrderList.forget c.position
 
 let clear t =
   List.iter (fun (_,c) -> forget c) t.cursors;
@@ -29,20 +32,24 @@ let clear t =
 let is_empty t = t.cursors = []
 
 let compare a b =
-  assert (a.valid && b.valid && a.buffer == b.buffer);
-  if a == b then
-    0
-  else
-    let rec aux = function
-      | [] -> assert false
-      | (_,x) :: _ when x == a -> -1
-      | (_,x) :: _ when x == b -> 1
-      | _ :: xs -> aux xs
-    in
-    aux a.buffer.cursors
+  assert (valid a && valid b && a.buffer == b.buffer);
+  let r =
+    if a == b then
+      0
+    else
+      let rec aux = function
+        | [] -> assert false
+        | (_,x) :: _ when x == a -> -1
+        | (_,x) :: _ when x == b -> 1
+        | _ :: xs -> aux xs
+      in
+      aux a.buffer.cursors
+  in
+  assert (r = OrderList.compare a.position b.position);
+  r
 
 let position c =
-  assert c.valid;
+  assert (valid c);
   let rec aux n = function
     | [] -> assert false
     | (n',c') :: xs ->
@@ -85,7 +92,7 @@ let insert t ~at ~len =
   t.cursors <- shift at t.cursors
 
 let remove_between c1 c2 =
-  assert (c1.valid && c2.valid);
+  assert (valid c1 && valid c2);
   if c1 == c2 then ()
   else begin
     assert (compare c1 c2 < 0);
@@ -109,7 +116,7 @@ let remove_between c1 c2 =
 
 
 let remove_before c len =
-  assert c.valid;
+  assert (valid c);
   assert (len >= 0);
   let pos = position c in
   let at, len =
@@ -141,7 +148,7 @@ let remove_before c len =
   c.buffer.cursors <- cleanup at c.buffer.cursors
 
 let remove_after c len =
-  assert c.valid;
+  assert (valid c);
   assert (len >= 0);
   let rec drop pos = function
     | [] -> []
@@ -160,7 +167,7 @@ let remove_after c len =
   c.buffer.cursors <- shift c.buffer.cursors
 
 let insert_before c len =
-  assert c.valid;
+  assert (valid c);
   assert (len >= 0);
   let rec shift = function
     | [] -> assert false
@@ -171,7 +178,7 @@ let insert_before c len =
   c.buffer.cursors <- shift c.buffer.cursors
 
 let insert_after c len =
-  assert c.valid;
+  assert (valid c);
   assert (len >= 0);
   let rec shift = function
     | [] -> assert false
@@ -186,16 +193,23 @@ let insert_after c len =
 
 let put_cursor t ~at content =
   assert (at >= 0);
-  let cursor = { buffer = t; valid = true; content } in
-  let rec aux at = function
-    | [] -> [(at, cursor)]
+  let rcursor = ref None in
+  let rec aux p at = function
+    | [] ->
+      let cursor = { buffer = t; position = OrderList.after p; content } in
+      rcursor := Some cursor;
+      [(at, cursor)]
     | (n, c) :: xs when at < n ->
+      let cursor = { buffer = t; position = OrderList.after p; content } in
+      rcursor := Some cursor;
       (at, cursor) :: (n - at, c) :: xs
-    | (n, _ as cell) :: xs ->
-      cell :: aux (at - n) xs
+    | (n, c as cell) :: xs ->
+      cell :: aux c.position (at - n) xs
   in
-  t.cursors <- aux at t.cursors;
-  cursor
+  t.cursors <- aux t.root at t.cursors;
+  match !rcursor with
+  | None -> assert false
+  | Some c -> c
 
 let rem_cursor c0 =
   let rec aux = function
@@ -209,9 +223,9 @@ let rem_cursor c0 =
   forget c0;
   c0.buffer.cursors <- aux c0.buffer.cursors
 
-let before c0 content =
+let before ({buffer; position} as c0) content =
   assert (valid c0);
-  let c = {buffer = c0.buffer; valid = true; content} in
+  let c = {buffer; position = OrderList.before c0.position; content} in
   let rec aux = function
     | [] -> assert false
     | (n, c0') :: xs when c0 == c0' ->
@@ -222,12 +236,12 @@ let before c0 content =
   c0.buffer.cursors <- aux c0.buffer.cursors;
   c
 
-let after c0 content =
+let after ({buffer; position} as c0) content =
   assert (valid c0);
-  let c = {buffer = c0.buffer; valid = true; content} in
+  let c = {buffer; position = OrderList.after c0.position; content} in
   let rec aux = function
     | [] -> assert false
-    | (n, c0' as cell) :: xs when c0 == c0' ->
+    | (_, c0' as cell) :: xs when c0 == c0' ->
       cell :: (0, c) :: xs
     | x :: xs ->
       x :: aux xs
@@ -256,7 +270,7 @@ let find_after t n =
   aux n t.cursors
 
 let cursor_before c =
-  assert c.valid;
+  assert (valid c);
   let rec aux = function
     | [] -> assert false
     | (_, c') :: (_, c0) :: _ when c == c0 -> Some c'
@@ -267,7 +281,7 @@ let cursor_before c =
   | l -> aux l
 
 let cursor_after c =
-  assert c.valid;
+  assert (valid c);
   let rec aux = function
     | [] -> assert false
     | [(_, c0)] when c == c0 -> None
