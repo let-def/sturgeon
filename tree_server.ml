@@ -22,7 +22,7 @@ let endpoint = connect @@ fun ~remote_query:_ ->
 let reader = Emacs_sexp.of_channel stdin
 
 let rec children prefix t =
-  for i = 0 to 9 do
+  for i = 0 to 999 do
     let label = prefix ^ string_of_int i in
     Emacs_hyperprint.text
       (Emacs_htree.add t ~children:(children label))
@@ -31,7 +31,7 @@ let rec children prefix t =
 
 let () =
   let open Emacs_hyperprint in
-  Emacs_hypernav.navigator (open_buffer endpoint "nav-server")
+  Emacs_hypernav.navigator (open_buffer endpoint "tree-server")
     "Epimenide"
   @@ fun nav ~title ~body ->
   text body "\n";
