@@ -205,12 +205,12 @@ let remove_between c1 c2 =
         let c2 = compare c2 c in
         if c2 > 0 then
           (forget c; forget_tree l;
-           cut_right l)
+           cut_right r)
         else if c2 < 0 then
           T.node (cut_right l) cell r
         else (* c2 = 0 *)
           (forget_tree l;
-           T.node T.leaf cell T.leaf)
+           T.node T.leaf cell r)
     in
     let rec aux = function
       | T.Leaf -> assert false
