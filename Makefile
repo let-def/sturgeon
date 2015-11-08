@@ -36,4 +36,4 @@ EXAMPLES = echo_server fib_server nav_server print_server tree_server
 examples: $(EXAMPLES)
 
 $(EXAMPLES): ncl
-	ocamlfind opt -package grenier.baltree,grenier.orderme -linkpkg -o $@ unix.cmxa emacs_serge.cmxa $@.ml
+	ocamlfind opt -package grenier.baltree,grenier.orderme -g -linkpkg -o $@ unix.cmxa emacs_serge.cmxa $@.ml
