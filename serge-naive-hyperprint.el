@@ -23,15 +23,17 @@
             (with-current-buffer buffer
               (save-excursion
                 (goto-char start)
+                (when (> length 0)
+                  (delete-char length nil))
                 (if (not action) (insert text)
                   (insert-text-button
                    text
                    'action 'serge-hyperprint--cursor-action
-                   'serge-sink sink))
-                (delete-char length nil)))))
+                   'serge-sink sink))))))
          (t (serge-cancel value)))))))
 
 (defun serge-hyperprint-handler (value)
+  (message "%S" value)
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
            (let ((buffer (get-buffer-create (cadr value)))

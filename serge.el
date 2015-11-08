@@ -7,13 +7,12 @@
 
 (defun serge--filter (proc lines)
   (setq lines (split-string lines "\n"))
-  (if (not (cdr lines))
-      (process-put proc 'serge-lines
-                   (cons (car lines) (process-get proc 'serge-lines)))
-    (setcar lines (mapconcat 'identity
-                             (reverse (cons (car lines)
-                                            (process-get proc 'serge-lines)))
-                             "\n"))
+  (unless (cdr lines)
+    (process-put proc 'serge-lines
+                 (cons (car lines) (process-get proc 'serge-lines))))
+  (when (cdr lines)
+    (let ((line (cons (car lines) (process-get proc 'serge-lines))))
+      (setcar lines (apply 'concat (reverse line))))
     (let ((lines lines))
       (while (cdr (cdr lines)) (setq lines (cdr lines)))
       (process-put proc 'serge-lines (cdr lines))
@@ -43,7 +42,7 @@
   (assert (serge--app-p f))
   (assert (eq (car f) 'once))
   (funcall (cdr f) 'feed arg))
-  
+
 (defun app-sink (f arg)
   (assert (serge--app-p f))
   (assert (eq (car f) 'sink))
