@@ -1,4 +1,4 @@
-open Emacs_hyperprint
+open Ui_print
 
 type t
 

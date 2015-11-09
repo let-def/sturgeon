@@ -1,4 +1,4 @@
-open Emacs_sexp
+open Sexp
 
 type 'a result =
   | Feed  of 'a

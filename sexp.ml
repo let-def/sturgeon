@@ -1,10 +1,10 @@
 (* {{{ COPYING *(
 
-   Emacs_sexp by Frédéric Bour <frederic.bour(_)lakaban.net>
+   Sexp by Frédéric Bour <frederic.bour(_)lakaban.net>
 
    To the extent possible under law, the person who associated CC0 with
-   Emacs_sexp has waived all copyright and related or neighboring rights
-   to Emacs_sexp.
+   Sexp has waived all copyright and related or neighboring rights
+   to Sexp.
 
    You should have received a copy of the CC0 legalcode along with this
    work.  If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.

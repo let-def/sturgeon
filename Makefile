@@ -1,18 +1,19 @@
 all: byte-code-library native-code-library
 	for i in $(SUB); do $(MAKE) -C $$i $@; done
 
-SOURCES = \
-	emacs_sexp.mli emacs_sexp.ml \
-	emacs_serge.mli emacs_serge.ml \
-	naive_buf.mli naive_buf.ml \
-	virtual_buf.mli virtual_buf.ml \
-	emacs_hyperprint.mli emacs_hyperprint.ml \
-	emacs_hypernav.mli emacs_hypernav.ml \
-	emacs_htree.mli emacs_htree.ml
+SOURCES =                    \
+  sexp.mli      sexp.ml      \
+  session.mli   session.ml   \
+  buf_naive.mli buf_naive.ml \
+  buf.mli       buf.ml       \
+  ui_print.mli  ui_print.ml  \
+  ui_nav.mli    ui_nav.ml    \
+  ui_tree.mli   ui_tree.ml
 
 PACKS = grenier.baltree grenier.orderme
 
-RESULT = emacs_serge
+LIB_PACK_NAME = sturgeon
+RESULT = sturgeon
 
 LIBINSTALL_FILES = \
 	emacs_sexp.mli   \

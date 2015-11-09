@@ -1,4 +1,4 @@
-open Emacs_hyperprint
+open Ui_print
 
 type t = {
   indent: int;
@@ -6,7 +6,7 @@ type t = {
 }
 
 let make cursor =
-  { indent = 0; cursor = Emacs_hyperprint.sub cursor }
+  { indent = 0; cursor = sub cursor }
 
 let indent t =
   if t.indent > 0 then
