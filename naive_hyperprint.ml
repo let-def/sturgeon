@@ -26,13 +26,13 @@ let send_command sink {start; length; replacement; action} =
   sink (Feed cmd)
 
 let push_command buffer cmd =
-  let opt = function
+  (*let opt = function
     | None -> "None"
     | Some _ -> "Some _"
   in
   Printf.eprintf
     "{ start = %d; length = %d; replacement = %S; action = %b } / sink = %s\n"
-    cmd.start cmd.length cmd.replacement cmd.action (opt buffer.sink);
+    cmd.start cmd.length cmd.replacement cmd.action (opt buffer.sink);*)
   if buffer.closed then ()
   else match buffer.sink with
     | None -> buffer.queue <- cmd :: buffer.queue
@@ -123,17 +123,19 @@ let open_buffer endpoint name =
   let buffer = Naive_buf.create () in
   let handler = M (Sink (function
     | Feed (C (S "sink", M (Sink sink))) ->
-      Printf.eprintf "GOT SINK!\n";
+      (*Printf.eprintf "GOT SINK!\n";*)
       replace_sink commands (Some sink)
     | Feed (C (S "click", I point)) ->
-      Printf.eprintf "GOT CLICK %d!\n" point;
+      (*Printf.eprintf "GOT CLICK %d!\n" point;*)
       begin match Naive_buf.find_before buffer point with
         | None ->
-          Printf.eprintf "NO CURSOR AT %d :(!\n" point;
+          (*Printf.eprintf "NO CURSOR AT %d :(!\n" point;*)
+          ()
         | Some cursor ->
           match get_action cursor with
           | None ->
-            Printf.eprintf "NO ACTION AT %d :(!\n" point;
+            (*Printf.eprintf "NO ACTION AT %d :(!\n" point;*)
+            ()
           | Some action ->
             action (Lazy.force (Naive_buf.content cursor))
       end;

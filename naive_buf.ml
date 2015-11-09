@@ -1,29 +1,31 @@
+module O = Order_indir
+
 type 'a t = {
   mutable cursors: (int * 'a cursor) list;
   on_invalidate: 'a cursor -> unit;
-  root: OrderList.t;
+  root: O.t;
 }
 
 and 'a cursor = {
   buffer: 'a t;
   content: 'a;
-  position: OrderList.t;
+  position: O.t;
 }
 
 let create ?(on_invalidate=ignore) () = {
   cursors = [];
   on_invalidate;
-  root = OrderList.root ();
+  root = O.root ();
 }
 
 let buffer c = c.buffer
 let content c = c.content
 
-let valid c = OrderList.is_valid c.position
+let valid c = O.is_valid c.position
 
 let forget c =
   c.buffer.on_invalidate c;
-  OrderList.forget c.position
+  O.forget c.position
 
 let clear t =
   List.iter (fun (_,c) -> forget c) t.cursors;
@@ -45,7 +47,7 @@ let compare a b =
       in
       aux a.buffer.cursors
   in
-  assert (r = OrderList.compare a.position b.position);
+  assert (r = O.compare a.position b.position);
   r
 
 let position c =
@@ -196,11 +198,11 @@ let put_cursor t ~at content =
   let rcursor = ref None in
   let rec aux p at = function
     | [] ->
-      let cursor = { buffer = t; position = OrderList.after p; content } in
+      let cursor = { buffer = t; position = O.after p; content } in
       rcursor := Some cursor;
       [(at, cursor)]
     | (n, c) :: xs when at < n ->
-      let cursor = { buffer = t; position = OrderList.after p; content } in
+      let cursor = { buffer = t; position = O.after p; content } in
       rcursor := Some cursor;
       (at, cursor) :: (n - at, c) :: xs
     | (n, c as cell) :: xs ->
@@ -225,7 +227,7 @@ let rem_cursor c0 =
 
 let before ({buffer; position} as c0) content =
   assert (valid c0);
-  let c = {buffer; position = OrderList.before c0.position; content} in
+  let c = {buffer; position = O.before c0.position; content} in
   let rec aux = function
     | [] -> assert false
     | (n, c0') :: xs when c0 == c0' ->
@@ -238,7 +240,7 @@ let before ({buffer; position} as c0) content =
 
 let after ({buffer; position} as c0) content =
   assert (valid c0);
-  let c = {buffer; position = OrderList.after c0.position; content} in
+  let c = {buffer; position = O.after c0.position; content} in
   let rec aux = function
     | [] -> assert false
     | (_, c0' as cell) :: xs when c0 == c0' ->

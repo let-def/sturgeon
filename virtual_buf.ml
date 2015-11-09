@@ -1,4 +1,4 @@
-module O = OrderList
+module O = Order_indir
 
 module T = Mbt.Make (struct
     type 'a measurable = 'a * int
