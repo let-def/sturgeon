@@ -16,10 +16,14 @@ LIB_PACK_NAME = sturgeon
 RESULT = sturgeon
 
 LIBINSTALL_FILES = \
-	emacs_sexp.mli   \
-	emacs_sexp.cmi   \
-	emacs_sexp.cmo   \
-	emacs_sexp.cmx
+	sturgeon.a       \
+ 	sturgeon.cma     \
+	sturgeon.cmi     \
+	sturgeon.cmo     \
+	sturgeon.cmx     \
+	sturgeon.cmxa    \
+	sturgeon.o
+	
 
 -include OCamlMakefile
 

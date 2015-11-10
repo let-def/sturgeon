@@ -62,6 +62,7 @@ let replace_sink commands sink =
 type cursor = {
   action: action option;
   commands: command_stream;
+  buffer: cursor lazy_t Buf.t ref;
   beginning: cursor lazy_t Buf.cursor;
   position: cursor lazy_t Buf.cursor;
 }
@@ -70,7 +71,7 @@ and action = cursor -> unit
 
 let get_action c = (Lazy.force (Buf.content c)).action
 
-let is_closed cursor = not (Buf.valid cursor.position)
+let is_closed cursor = not (Buf.member !(cursor.buffer) cursor.position)
 
 let sub ?action current =
   if is_closed current then current
@@ -80,34 +81,40 @@ let sub ?action current =
       | Some action -> action
     in
     let rec cursor = lazy begin
-      let beginning = Buf.before current.position cursor in
-      let position = Buf.after beginning cursor in
-      { action; commands = current.commands; beginning; position }
+      let buffer = current.buffer in
+      let buf', beginning = Buf.put_before !buffer current.position cursor in
+      let buf', position  = Buf.put_after  buf'    beginning cursor in
+      buffer := buf';
+      {action; buffer; commands = current.commands; beginning; position}
     end in
     Lazy.force cursor
 
 
-let text cursor ?properties text =
+let text {buffer; commands; beginning; position} ?properties text =
   (*let cmd = match properties with
     | None -> [S "text"; T text]
     | Some props ->
       let props = transform_list ~inj:void ~map:(fun x -> x) props in
       [S "text"; T text; S ":properties"; props]
   in*)
-  push_command cursor.commands
-    { start = Buf.position cursor.position;
-      length = 0;
-      replacement = text;
-      action = (get_action cursor.beginning <> None) };
-  Buf.insert_before cursor.position (String.length text)
+  if Buf.member !buffer position then begin
+    push_command commands
+      { start = Buf.position !buffer position;
+        length = 0;
+        replacement = text;
+        action = (get_action beginning <> None) };
+    buffer := Buf.insert_before !buffer position (String.length text)
+  end
 
-let clear cursor =
-  let beginning = Buf.position cursor.beginning in
-  let position = Buf.position cursor.position in
-  push_command cursor.commands
-    { start = beginning; length = position - beginning;
-      replacement = ""; action = false };
-  Buf.remove_between cursor.beginning cursor.position
+let clear {buffer; commands; beginning; position} =
+  if Buf.member !buffer position then begin
+    let start = Buf.position !buffer beginning in
+    let current = Buf.position !buffer position in
+    push_command commands
+      { start; length = current - start;
+        replacement = ""; action = false };
+    buffer := Buf.remove_between !buffer beginning position
+  end
 
 let link cursor ?properties msg action =
   let cursor = sub ~action:(Some action) cursor in
@@ -122,14 +129,14 @@ let open_buffer endpoint name =
     closed = false;
     queue  = [];
   } in
-  let buffer = Buf.create () in
+  let buffer = ref (Buf.create ()) in
   let handler = M (Sink (function
     | Feed (C (S "sink", M (Sink sink))) ->
       (*Printf.eprintf "GOT SINK!\n";*)
       replace_sink commands (Some sink)
     | Feed (C (S "click", I point)) ->
       (*Printf.eprintf "GOT CLICK %d!\n" point;*)
-      begin match Buf.find_before buffer point with
+      begin match Buf.find_before !buffer point with
         | None ->
           (*Printf.eprintf "NO CURSOR AT %d :(!\n" point;*)
           ()
@@ -150,9 +157,10 @@ let open_buffer endpoint name =
     ))
   in
   let rec cursor = lazy begin
-    let beginning = Buf.put_cursor buffer ~at:0 cursor in
-    let position = Buf.after beginning cursor in
-    {beginning; position; commands; action = None}
+    let buf, beginning = Buf.put_cursor !buffer ~at:0 cursor in
+    let buf, position  = Buf.put_after buf beginning cursor in
+    buffer := buf;
+    {buffer; beginning; position; commands; action = None}
   end
   in
     endpoint.query (sexp_of_list
