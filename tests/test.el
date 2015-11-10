@@ -1,8 +1,6 @@
 (progn
-  (load-file "serge.el")
-  (load-file "serge-naive-hyperprint.el")
+  (load-file "../sturgeon.el")
   
-  (serge-start-process "tree-server" nil
-                       "/home/def/Work/emacs-serge/tree_server" nil
-                       'serge-hyperprint-handler)
-)
+  (sturgeon-start-process "tree-server" nil
+                          "/home/def/Work/emacs-serge/tests/tree_server" nil
+                          'sturgeon-ui-handler))

@@ -1,5 +1,6 @@
-open Emacs_serge
-open Emacs_sexp
+open Sturgeon
+open Session
+open Sexp
 
 let () =
   let fd = Unix.openfile "copycat.log"
@@ -12,9 +13,9 @@ let endpoint = connect @@ fun ~remote_query:_ ->
   {
     stdout = (fun sexp ->
         prerr_string "> ";
-        Emacs_sexp.tell_sexp prerr_string sexp;
+        Sexp.tell_sexp prerr_string sexp;
         prerr_newline ();
-        Emacs_sexp.tell_sexp print_string sexp;
+        Sexp.tell_sexp print_string sexp;
         print_newline ();
       );
     query = (function
@@ -31,7 +32,7 @@ let endpoint = connect @@ fun ~remote_query:_ ->
         | q -> cancel q);
   }
 
-let reader = Emacs_sexp.of_channel stdin
+let reader = Sexp.of_channel stdin
 
 let rec loop () =
   flush_all ();
@@ -39,7 +40,7 @@ let rec loop () =
   | None -> close endpoint
   | Some sexp ->
     prerr_string "< ";
-    Emacs_sexp.tell_sexp prerr_string sexp;
+    Sexp.tell_sexp prerr_string sexp;
     prerr_newline ();
     endpoint.stdout sexp;
     loop ()

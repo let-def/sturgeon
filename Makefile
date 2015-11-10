@@ -30,10 +30,3 @@ uninstall: libuninstall
 reinstall:
 	-$(MAKE) uninstall
 	$(MAKE) install
-
-EXAMPLES = echo_server fib_server nav_server print_server tree_server
-
-examples: $(EXAMPLES)
-
-$(EXAMPLES): ncl
-	ocamlfind opt -package grenier.baltree,grenier.orderme -g -linkpkg -o $@ unix.cmxa emacs_serge.cmxa $@.ml

@@ -247,46 +247,74 @@
 
 (require 'button)
 
-(defun sturgeon-hyperprint--cursor-action (x)
-  (let ((action (button-get x 'sturgeon-sink)))
-    (if (eq (car action) 'sink)
-        (app-sink action (cons 'click (marker-position x)))
-      (app-once action t)
-      (delete-overlay x))))
+(defun sturgeon-ui--cursor-action (x)
+  (let* ((action (button-get x 'sturgeon-sink))
+         (marker (button-get x 'sturgeon-marker))
+         (offset (- (marker-position x) (marker-position marker))))
+    (app-sink action (cons 'click (1+ offset)))))
 
-(defun sturgeon-hyperprint--make-cursor (buffer sink)
-  (lexical-let ((buffer buffer) (sink sink))
+(defun sturgeon-ui--make-cursor (buffer point sink)
+  (lexical-let ((buffer buffer) (sink sink) (marker (make-marker)))
+    (set-marker marker point buffer)
+    (set-marker-insertion-type marker t)
     (lambda-sink (kind value)
       ;; (when (eq kind 'quit) ...)
       (when (eq kind 'feed)
         (cond
          ;; Clear sub regions
          ((eq (car value) 'substitute)
-          (let ((start  (1+ (cadr value)))
+          (let ((start  (+ (marker-position marker) (cadr value)))
                 (length (caddr value))
                 (text   (cadddr value))
-                (action (cadddr (cdr value))))
+                (action (cadddr (cdr value)))
+                (inhibit-read-only t))
             (with-current-buffer buffer
               (save-excursion
+                (set-marker-insertion-type marker nil)
                 (goto-char start)
                 (when (> length 0)
                   (delete-char length nil))
-                (if (not action) (insert text)
-                  (insert-text-button
-                   text
-                   'action 'sturgeon-hyperprint--cursor-action
-                   'sturgeon-sink sink))))))
+                (when (and text (> (length text) 0))
+                  (if (not action) (insert (propertize text 'read-only t))
+                    (insert-text-button
+                     text
+                     'action 'sturgeon-ui--cursor-action
+                     'sturgeon-sink sink
+                     'sturgeon-marker marker
+                     'read-only t
+                     )))
+                  (set-marker-insertion-type marker t)
+                  ))))
          (t (sturgeon-cancel value)))))))
 
-(defun sturgeon-hyperprint-handler (value)
+(defun sturgeon-ui-handler (value)
   (message "%S" value)
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
            (let ((buffer (get-buffer-create (cadr value)))
                  (sink (caddr value)))
-             (app-any sink
-                      (cons 'sink (sturgeon-hyperprint--make-cursor buffer sink)))))
+             (app-any
+              sink
+              (cons 'sink (sturgeon-ui--make-cursor buffer (point-min) sink)))))
           (t (sturgeon-cancel value)))))
+
+(defun sturgeon-ui-connect (process &rest args)
+  (lexical-let ((buffer (current-buffer)) (marker (point-marker)))
+    (sturgeon-query process
+      (list
+       'connect-ui
+       (lambda-once (kind value)
+         (if (not (eq kind 'feed))
+             (progn
+               (sturgeon-cancel value)
+               (with-current-buffer buffer
+                 (save-excursion
+                   (goto-char marker)
+                   (insert "Connection closed.\n"))))
+           (app-any
+            sink
+            (cons 'sink (sturgeon-ui--make-cursor buffer (marker-position marker) sink)))))
+       args))))
 
 ;; Done
 

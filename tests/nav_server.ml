@@ -1,4 +1,5 @@
-open Emacs_serge
+open Sturgeon
+open Session
 
 let () =
   let fd = Unix.openfile "copycat.log"
@@ -11,28 +12,28 @@ let endpoint = connect @@ fun ~remote_query:_ ->
   {
     stdout = (fun sexp ->
         prerr_string "> ";
-        Emacs_sexp.tell_sexp prerr_string sexp;
+        Sexp.tell_sexp prerr_string sexp;
         prerr_newline ();
-        Emacs_sexp.tell_sexp print_string sexp;
+        Sexp.tell_sexp print_string sexp;
         print_newline ();
       );
     query = (fun t -> cancel t);
   }
 
-let reader = Emacs_sexp.of_channel stdin
+let reader = Sexp.of_channel stdin
 
 
 let () =
-  let open Emacs_hyperprint in
-  Emacs_hypernav.navigator (open_buffer endpoint "nav-server")
+  let open Ui_print in
+  Ui_nav.navigator (open_buffer endpoint "nav-server")
     "Epimenide"
   @@ fun nav ~title ~body ->
   text body "Je mens.\n\n";
   link body "- C'est vrai.\n"
-    (fun _ -> Emacs_hypernav.goto nav "C'est vrai !" @@
+    (fun _ -> Ui_nav.goto nav "C'est vrai !" @@
       fun nav ~title ~body -> text body "C'est faux.");
   link body "- C'est faux.\n"
-    (fun _ -> Emacs_hypernav.goto nav "C'est faux !" @@
+    (fun _ -> Ui_nav.goto nav "C'est faux !" @@
       fun nav ~title ~body -> text body "C'est vrai.")
 
 let rec loop () =
@@ -41,7 +42,7 @@ let rec loop () =
   | None -> close endpoint
   | Some sexp ->
     prerr_string "< ";
-    Emacs_sexp.tell_sexp prerr_string sexp;
+    Sexp.tell_sexp prerr_string sexp;
     prerr_newline ();
     endpoint.stdout sexp;
     loop ()
