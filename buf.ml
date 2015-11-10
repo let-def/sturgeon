@@ -1,4 +1,4 @@
-module O = Order_indir
+module O = Order_managed
 
 module T = Mbt.Make (struct
     type 'a measurable = 'a * int
@@ -9,43 +9,32 @@ module T = Mbt.Make (struct
 
 type 'a t = {
   root: O.t;
-  mutable tree: 'a cursor T.t;
-  on_invalidate: 'a cursor -> unit;
+  tree: 'a cursor T.t;
 }
 
 and 'a cursor = {
-  buffer: 'a t;
   content: 'a;
   position: O.t;
 }
 
-let create ?(on_invalidate=ignore) () = {
+let create () = {
   root = O.root ();
   tree = T.leaf;
-  on_invalidate;
 }
 
-let buffer c = c.buffer
 let content c = c.content
 
-let valid c = O.is_valid c.position
-let forget c =
-  c.buffer.on_invalidate c;
-  O.forget c.position
+let validate t c msg =
+  if not (O.same_order t.root c.position) then
+    invalid_arg msg
+
+let update t f =
+  {t with tree = f t.tree}
+
+let clear t = {t with tree = T.leaf}
 
 let compare a b =
   O.compare a.position b.position
-
-let clear t =
-  let rec aux = function
-    | T.Leaf -> ()
-    | T.Node (_, l, (c, _), r, _) ->
-      aux l;
-      forget c;
-      aux r
-  in
-  aux t.tree;
-  t.tree <- T.leaf
 
 let is_leaf = function
   | T.Leaf -> true
@@ -53,7 +42,21 @@ let is_leaf = function
 
 let is_empty t = is_leaf t.tree
 
-let position c0 =
+let member t c =
+  let rec aux = function
+  | T.Leaf -> false
+  | T.Node (_, l, (c', _), r, _) ->
+    let o = compare c c' in
+    if o = 0 then
+      true
+    else if o < 0 then
+      aux l
+    else
+      aux r
+  in
+  aux t.tree
+
+let position t c0 =
   let rec traverse n = function
     | T.Leaf -> raise Not_found
     | T.Node (_, l, (c, offset), r, _) ->
@@ -67,7 +70,7 @@ let position c0 =
         else
           n
   in
-  traverse 0 c0.buffer.tree
+  traverse 0 t.tree
 
 let rec shift n = function
   | T.Leaf -> T.leaf
@@ -78,7 +81,7 @@ let rec shift n = function
 
 let shift n tree = if n = 0 then tree else shift n tree
 
-let rem_cursor c0 =
+let rem_cursor t c0 =
   let rec traverse = function
     | T.Leaf -> raise Not_found
     | T.Node (_, l, (c, offset as cell), r, _) ->
@@ -91,15 +94,15 @@ let rem_cursor c0 =
         T.join l (shift offset r)
       end
   in
-  let tree = traverse c0.buffer.tree in
-  forget c0;
-  c0.buffer.tree <- tree
+  update t traverse
 
 let put_cursor t ~at content =
+  if at < 0 then
+    invalid_arg "Buf.put_cursor: [at] must be >= 0";
   let cursor = ref None in
   let rec traverse before at = function
     | T.Leaf ->
-      let c = { buffer = t; position = O.after before; content} in
+      let c = {position = O.after before; content} in
       cursor := Some c;
       T.node T.leaf (c, at) T.leaf
     | T.Node (_, l, (c, offset as cell), r, _) ->
@@ -110,19 +113,16 @@ let put_cursor t ~at content =
       else
         T.node l cell (traverse c.position (at - pos) r)
   in
-  t.tree <- traverse t.root at t.tree;
+  let t = update t (traverse t.root at) in
   match !cursor with
   | None -> assert false
-  | Some x -> x
-
-let rec forget_tree = function
-  | T.Leaf -> ()
-  | T.Node (_, l, (c, _), r, _) ->
-    forget c;
-    forget_tree l;
-    forget_tree r
+  | Some x -> t, x
 
 let insert t ~at ~len =
+  if at < 0 then
+    invalid_arg "Buf.insert: [at] must be >= 0";
+  if len < 0 then
+    invalid_arg "Buf.insert: [len] must be >= 0";
   let rec aux n = function
     | T.Leaf -> assert false
     | T.Node (_, l, (c, n1 as cell), r, _) ->
@@ -137,11 +137,14 @@ let insert t ~at ~len =
       else
         T.node l cell (aux (n - n0 - n1) r)
   in
-  assert (at >= 0 && len >= 0);
-  t.tree <- aux at t.tree
+  if is_leaf t.tree then t
+  else update t (aux at)
 
 let remove t ~at ~len =
-  assert (at >= 0 && len >= 0);
+  if at < 0 then
+    invalid_arg "Buf.remove: [at] must be >= 0";
+  if len < 0 then
+    invalid_arg "Buf.remove: [len] must be >= 0";
   let len = ref len in
   let rec aux n = function
     | T.Leaf -> assert false
@@ -170,7 +173,6 @@ let remove t ~at ~len =
           else
             (* Including the current node *)
             (len := len' - n1;
-             forget c;
              T.join l (aux (-1) r))
         else
           (* At the right of the current node *)
@@ -179,41 +181,41 @@ let remove t ~at ~len =
       else
         T.node l cell r
   in
-  t.tree <- aux at t.tree
+  if is_leaf t.tree then t
+  else update t (aux at)
 
-let remove_between c1 c2 =
-  assert (valid c1 && valid c2);
-  if c1 == c2 then ()
+let remove_between t c1 c2 =
+  validate t c1 "Buf.remove_between: cursor not in buffer";
+  validate t c2 "Buf.remove_between: cursor not in buffer";
+  if c1 == c2 then t
+  else if compare c1 c2 > 0 then
+    invalid_arg
+      "Buf.remove_between: cursors must be in increaing order"
   else begin
-    assert (compare c1 c2 < 0);
     let rec cut_left = function
-      | T.Leaf -> assert false
+      | T.Leaf -> invalid_arg "Buf.remove_between: cursor not in buffer"
       | T.Node (_, l, (c, _ as cell), r, _) ->
         let c1 = compare c1 c in
         if c1 < 0 then
-          (forget c; forget_tree r;
-           cut_left l)
+          cut_left l
         else if c1 > 0 then
           T.node l cell (cut_left r)
         else (* c1 = 0 *)
-          (forget_tree r;
-           T.node l cell T.leaf)
+          T.node l cell T.leaf
     in
     let rec cut_right = function
-      | T.Leaf -> assert false
+      | T.Leaf -> invalid_arg "Buf.remove_between: cursor not in buffer"
       | T.Node (_, l, (c, _ as cell), r, _) ->
         let c2 = compare c2 c in
         if c2 > 0 then
-          (forget c; forget_tree l;
-           cut_right r)
+          cut_right r
         else if c2 < 0 then
           T.node (cut_right l) cell r
         else (* c2 = 0 *)
-          (forget_tree l;
-           T.node T.leaf cell r)
+          T.node T.leaf cell r
     in
     let rec aux = function
-      | T.Leaf -> assert false
+      | T.Leaf -> invalid_arg "Buf.remove_between: cursor not in buffer"
       | T.Node (_, l, (c, _ as cell), r, _) ->
         let c1 = compare c1 c and c2 = compare c2 c in
         if c2 < 0 then
@@ -225,14 +227,18 @@ let remove_between c1 c2 =
         else if c2 = 0 then
           T.node (cut_left l) (c, 0) r
         else (* c1 < 0 && c2 > 0 *)
-          (forget c; T.join (cut_left l) (cut_right r))
+          T.join (cut_left l) (cut_right r)
     in
-    c1.buffer.tree <- aux c1.buffer.tree
+    update t aux
   end
 
-let remove_after c len =
-  assert (valid c && len >= 0);
-  if len > 0 then begin
+let remove_after t c len =
+  validate t c "Buf.remove_after: cursor not in buffer";
+  if len < 0 then
+    invalid_arg "Buf.remove_after: len must be >= 0"
+  else if len = 0 then
+    t
+  else begin
     let len = ref len in
     let rec rem = function
       | T.Leaf -> T.leaf
@@ -244,20 +250,19 @@ let remove_after c len =
           T.node l cell r
         else begin
           len := !len - n0;
-          forget_tree l;
           if !len <= n1 then begin
             let result = T.node T.leaf (c, n1 - !len) r in
             len := 0;
             result
           end else begin
             len := !len - n1;
-            forget c;
             rem r
           end
         end
     in
     let rec seek = function
-      | T.Leaf -> assert false
+      | T.Leaf ->
+        invalid_arg "Buf.remove_after: cursor not in buffer"
       | T.Node (_, l, (c', n as cell), r, _) ->
         let c = compare c c' in
         if c = 0 then
@@ -272,17 +277,20 @@ let remove_after c len =
              T.node l (c', n - len') r)
           else
             (len := len' - n;
-             forget c';
              T.join l (rem r))
         else (* c > 0 *)
           T.node l cell (seek r)
     in
-    c.buffer.tree <- seek c.buffer.tree
+    update t seek
   end
 
-let remove_before c len =
-  assert (valid c && len >= 0);
-  if len > 0 then begin
+let remove_before t c len =
+  validate t c "Buf.remove_before: cursor not in buffer";
+  if len < 0 then
+    invalid_arg "Buf.remove_before: len must be >= 0"
+  else if len = 0 then
+    t
+  else begin
     let len = ref len in
     let rec rem = function
       | T.Leaf -> T.leaf
@@ -294,21 +302,19 @@ let remove_before c len =
           T.node l cell r
         else begin
           len := !len - n0;
-          forget_tree r;
           let len' = !len in
           if len' <= n1 then begin
-            forget c';
             len := - (n1 - !len);
             l
           end else begin
             len := !len - n1;
-            forget c';
             rem l
           end
         end
     in
     let rec seek = function
-      | T.Leaf -> assert false
+      | T.Leaf ->
+        invalid_arg "Buf.remove_before: cursor not in buffer"
       | T.Node (_, l, (c', n as cell), r, _) ->
         let c = compare c c' in
         if c = 0 then
@@ -327,11 +333,9 @@ let remove_before c len =
             T.node l cell r
           else if len' <= n then
             (len := 0;
-             forget c';
              T.join l (shift (n - len') r))
           else
             (len := len' - n;
-             forget c';
              let l = rem l in
              let len' = !len in
              if len' < 0 && not (is_leaf r) then
@@ -349,14 +353,18 @@ let remove_before c len =
           else
             T.node l cell r
     in
-    c.buffer.tree <- seek c.buffer.tree
+    update t seek
   end
 
-let insert_before c len =
-  assert (valid c && len >= 0);
-  if len > 0 then begin
+let insert_before t c len =
+  validate t c "Buf.insert_before: cursor not in buffer";
+  if len < 0 then
+    invalid_arg "Buf.insert_before: len must be >= 0"
+  else if len = 0 then
+    t
+  else begin
     let rec aux = function
-      | T.Leaf -> assert false
+      | T.Leaf -> invalid_arg "Buf.insert_before: cursor not in buffer"
       | T.Node (_, l, (c', n as cell), r, _) ->
         let c = compare c c' in
         if c < 0 then
@@ -366,15 +374,19 @@ let insert_before c len =
         else
           T.node l (c', n + len) r
     in
-    c.buffer.tree <- aux c.buffer.tree
+    update t aux
   end
 
-let insert_after c len =
-  assert (valid c && len >= 0);
-  if len > 0 then begin
+let insert_after t c len =
+  validate t c "Buf.insert_after: cursor not in buffer";
+  if len < 0 then
+    invalid_arg "Buf.insert_after: len must be >= 0"
+  else if len = 0 then
+    t
+  else begin
     let len = ref len in
     let rec aux = function
-      | T.Leaf -> assert false
+      | T.Leaf -> invalid_arg "Buf.insert_after: cursor not in buffer"
       | T.Node (_, l, (c', n as cell), r, _) as tree ->
         let c = compare c c' in
         if c < 0 then
@@ -395,15 +407,15 @@ let insert_after c len =
           result
         )
     in
-    c.buffer.tree <- aux c.buffer.tree
+    update t aux
   end
 
 
-let before c0 content =
-  assert (valid c0);
-  let c = {buffer = c0.buffer; position = O.before c0.position; content} in
+let put_before t c0 content =
+  validate t c0 "Buf.put_before: cursor not in buffer";
+  let c = {position = O.before c0.position; content} in
   let rec traverse = function
-    | T.Leaf -> assert false
+    | T.Leaf -> invalid_arg "Buf.put_before: cursor not in buffer"
     | T.Node (_, l, (c', offset as cell), r, _) ->
       let i = compare c0 c' in
       if i = 0 then
@@ -413,14 +425,13 @@ let before c0 content =
       else
         T.node l cell (traverse r)
   in
-  c0.buffer.tree <- traverse c0.buffer.tree;
-  c
+  update t traverse, c
 
-let after c0 content =
-  assert (valid c0);
-  let c = {buffer = c0.buffer; position = O.after c0.position; content} in
+let put_after t c0 content =
+  validate t c0 "Buf.put_after: cursor not in buffer";
+  let c = {position = O.after c0.position; content} in
   let rec traverse = function
-    | T.Leaf -> assert false
+    | T.Leaf -> invalid_arg "Buf.put_after: cursor not in buffer"
     | T.Node (_, l, (c', _ as cell), r, _) ->
       let i = compare c0 c' in
       if i = 0 then
@@ -430,8 +441,7 @@ let after c0 content =
       else
         T.node l cell (traverse r)
   in
-  c0.buffer.tree <- traverse c0.buffer.tree;
-  c
+  update t traverse, c
 
 let find_before t n =
   let rec aux n = function
@@ -464,8 +474,8 @@ let find_after t n =
   in
   aux n t.tree
 
-let cursor_before c =
-  assert (valid c);
+let cursor_before t c =
+  validate t c "Buf.cursor_before: cursor not in buffer";
   let rec aux = function
     | T.Leaf -> None
     | T.Node (_, l, (c', n1), r, _) ->
@@ -476,10 +486,10 @@ let cursor_before c =
         | Some _ as result -> result
         | None -> Some c'
   in
-  aux c.buffer.tree
+  aux t.tree
 
-let cursor_after c =
-  assert (valid c);
+let cursor_after t c =
+  validate t c "Buf.cursor_after: cursor not in buffer";
   let rec aux = function
     | T.Leaf -> None
     | T.Node (_, l, (c', n1), r, _) ->
@@ -490,4 +500,4 @@ let cursor_after c =
         | Some _ as result -> result
         | None -> Some c'
   in
-  aux c.buffer.tree
+  aux t.tree

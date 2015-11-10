@@ -1,57 +1,36 @@
-module O = Order_indir
+module O = Order_managed
 
 type 'a t = {
-  mutable cursors: (int * 'a cursor) list;
-  on_invalidate: 'a cursor -> unit;
   root: O.t;
+  cursors: (int * 'a cursor) list;
 }
 
 and 'a cursor = {
-  buffer: 'a t;
   content: 'a;
   position: O.t;
 }
 
-let create ?(on_invalidate=ignore) () = {
-  cursors = [];
-  on_invalidate;
+let create () = {
   root = O.root ();
+  cursors = [];
 }
 
-let buffer c = c.buffer
 let content c = c.content
 
-let valid c = O.is_valid c.position
+let validate t c =
+  assert (O.same_order t.root c.position)
 
-let forget c =
-  c.buffer.on_invalidate c;
-  O.forget c.position
+let update t f =
+  {t with cursors = f t.cursors}
 
-let clear t =
-  List.iter (fun (_,c) -> forget c) t.cursors;
-  t.cursors <- []
+let clear t = {t with cursors = []}
 
 let is_empty t = t.cursors = []
 
-let compare a b =
-  assert (valid a && valid b && a.buffer == b.buffer);
-  let r =
-    if a == b then
-      0
-    else
-      let rec aux = function
-        | [] -> assert false
-        | (_,x) :: _ when x == a -> -1
-        | (_,x) :: _ when x == b -> 1
-        | _ :: xs -> aux xs
-      in
-      aux a.buffer.cursors
-  in
-  assert (r = O.compare a.position b.position);
-  r
+let member t c = List.exists (fun (_,c') -> c == c') t.cursors
 
-let position c =
-  assert (valid c);
+let position t c =
+  validate t c;
   let rec aux n = function
     | [] -> assert false
     | (n',c') :: xs ->
@@ -59,7 +38,10 @@ let position c =
       if c == c' then n
       else aux n xs
   in
-  aux 0 c.buffer.cursors
+  aux 0 t.cursors
+
+let compare c1 c2 =
+  O.compare c1.position c2.position
 
 let remove t ~at ~len =
   assert (at >= 0);
@@ -69,7 +51,6 @@ let remove t ~at ~len =
     | (n, c) :: xs when len <= n ->
       (n - len, c) :: xs
     | (n, c) :: xs ->
-      forget c;
       skip_right (len - n) xs
   in
   let rec skip_left at = function
@@ -79,7 +60,7 @@ let remove t ~at ~len =
     | (n,_ as cell) :: xs ->
       cell :: skip_left (at - n) xs
   in
-  t.cursors <- skip_left at t.cursors
+  update t (skip_left at)
 
 let insert t ~at ~len =
   assert (at >= 0);
@@ -91,11 +72,12 @@ let insert t ~at ~len =
     | (n,_ as cell) :: xs ->
       cell :: shift (at - n) xs
   in
-  t.cursors <- shift at t.cursors
+  update t (shift at)
 
-let remove_between c1 c2 =
-  assert (valid c1 && valid c2);
-  if c1 == c2 then ()
+let remove_between t c1 c2 =
+  validate t c1;
+  validate t c2;
+  if c1 == c2 then t
   else begin
     assert (compare c1 c2 < 0);
     let rec drop = function
@@ -103,7 +85,6 @@ let remove_between c1 c2 =
       | (_, c) :: xs when c == c2 ->
         (0, c) :: xs
       | (_, c) :: xs ->
-        forget c;
         drop xs
     in
     let rec skip = function
@@ -113,21 +94,20 @@ let remove_between c1 c2 =
       | x :: xs ->
         x :: skip xs
     in
-    c1.buffer.cursors <- skip c1.buffer.cursors
+    update t skip
   end
 
-
-let remove_before c len =
-  assert (valid c);
+let remove_before t c len =
+  validate t c;
   assert (len >= 0);
-  let pos = position c in
+  let pos = position t c in
   let at, len =
     if pos < len then
       0, pos
     else
       pos - len, len
   in
-  remove c.buffer ~at ~len;
+  let t = remove t ~at ~len in
   let rec clean = function
     | [] -> assert false
     | (n, c') :: xs ->
@@ -135,29 +115,28 @@ let remove_before c len =
       if c == c' then
         xs
       else
-        (forget c; clean xs)
+         clean xs
   in
   let rec cleanup pos = function
     | [] -> assert false
     | ((n,c') :: xs) as tail when n = pos ->
       if c == c' then
         tail
-      else (forget c'; (n, c) :: clean xs)
+      else (n, c) :: clean xs
     | (n, _ as cell) :: xs ->
       assert (pos > n);
       cell :: cleanup (pos - n) xs
   in
-  c.buffer.cursors <- cleanup at c.buffer.cursors
+  update t (cleanup at)
 
-let remove_after c len =
-  assert (valid c);
+let remove_after t c len =
+  validate t c;
   assert (len >= 0);
   let rec drop pos = function
     | [] -> []
     | (n, c') :: xs when pos <= n ->
       (n - pos, c') :: xs
     | (n, c') :: xs ->
-      forget c';
       drop (pos - n) xs
   in
   let rec shift = function
@@ -166,10 +145,10 @@ let remove_after c len =
       cell :: drop len xs
     | cell :: xs -> cell :: shift xs
   in
-  c.buffer.cursors <- shift c.buffer.cursors
+  update t shift
 
-let insert_before c len =
-  assert (valid c);
+let insert_before t c len =
+  validate t c;
   assert (len >= 0);
   let rec shift = function
     | [] -> assert false
@@ -177,10 +156,10 @@ let insert_before c len =
       (n + len, c) :: xs
     | cell :: xs -> cell :: shift xs
   in
-  c.buffer.cursors <- shift c.buffer.cursors
+  update t shift
 
-let insert_after c len =
-  assert (valid c);
+let insert_after t c len =
+  validate t c;
   assert (len >= 0);
   let rec shift = function
     | [] -> assert false
@@ -191,29 +170,30 @@ let insert_after c len =
         )
     | cell :: xs -> cell :: shift xs
   in
-  c.buffer.cursors <- shift c.buffer.cursors
+  update t shift
 
 let put_cursor t ~at content =
   assert (at >= 0);
   let rcursor = ref None in
   let rec aux p at = function
     | [] ->
-      let cursor = { buffer = t; position = O.after p; content } in
+      let cursor = {position = O.after p; content} in
       rcursor := Some cursor;
       [(at, cursor)]
     | (n, c) :: xs when at < n ->
-      let cursor = { buffer = t; position = O.after p; content } in
+      let cursor = {position = O.after p; content} in
       rcursor := Some cursor;
       (at, cursor) :: (n - at, c) :: xs
     | (n, c as cell) :: xs ->
       cell :: aux c.position (at - n) xs
   in
-  t.cursors <- aux t.root at t.cursors;
+  let t = update t (aux t.root at) in
   match !rcursor with
   | None -> assert false
-  | Some c -> c
+  | Some c -> t, c
 
-let rem_cursor c0 =
+let rem_cursor t c0 =
+  validate t c0;
   let rec aux = function
     | [] -> assert false
     | [(_,c)] when c == c0 -> []
@@ -222,12 +202,11 @@ let rem_cursor c0 =
     | x :: xs ->
       x :: aux xs
   in
-  forget c0;
-  c0.buffer.cursors <- aux c0.buffer.cursors
+  update t aux
 
-let before ({buffer; position} as c0) content =
-  assert (valid c0);
-  let c = {buffer; position = O.before c0.position; content} in
+let put_before t c0 content =
+  validate t c0;
+  let c = {position = O.before c0.position; content} in
   let rec aux = function
     | [] -> assert false
     | (n, c0') :: xs when c0 == c0' ->
@@ -235,12 +214,11 @@ let before ({buffer; position} as c0) content =
     | x :: xs ->
       x :: aux xs
   in
-  c0.buffer.cursors <- aux c0.buffer.cursors;
-  c
+  update t aux, c
 
-let after ({buffer; position} as c0) content =
-  assert (valid c0);
-  let c = {buffer; position = O.after c0.position; content} in
+let put_after t c0 content =
+  validate t c0;
+  let c = {position = O.after c0.position; content} in
   let rec aux = function
     | [] -> assert false
     | (_, c0' as cell) :: xs when c0 == c0' ->
@@ -248,8 +226,7 @@ let after ({buffer; position} as c0) content =
     | x :: xs ->
       x :: aux xs
   in
-  c0.buffer.cursors <- aux c0.buffer.cursors;
-  c
+  update t aux, c
 
 let find_before t n =
   let rec aux n = function
@@ -271,23 +248,23 @@ let find_after t n =
   in
   aux n t.cursors
 
-let cursor_before c =
-  assert (valid c);
+let cursor_before t c =
+  validate t c;
   let rec aux = function
     | [] -> assert false
     | (_, c') :: (_, c0) :: _ when c == c0 -> Some c'
     | _ :: xs -> aux xs
   in
-  match c.buffer.cursors with
+  match t.cursors with
   | (_, c') :: _ when c == c' -> None
   | l -> aux l
 
-let cursor_after c =
-  assert (valid c);
+let cursor_after t c =
+  validate t c;
   let rec aux = function
     | [] -> assert false
     | [(_, c0)] when c == c0 -> None
     | (_, c0) :: (_, c') :: _ when c == c0 -> Some c'
     | _ :: xs -> aux xs
   in
-  aux c.buffer.cursors
+  aux t.cursors
