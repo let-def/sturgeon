@@ -114,3 +114,5 @@ val cursor_before  : 'a t -> 'a cursor -> 'a cursor option
 (** [cursor_before t c]
     finds the first cursor [c'] in [t] satisfying [compare c' c > 0] *)
 val cursor_after   : 'a t -> 'a cursor -> 'a cursor option
+
+val to_list : 'a t -> (int * 'a cursor) list

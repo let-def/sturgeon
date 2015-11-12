@@ -32,7 +32,7 @@ let member t c = List.exists (fun (_,c') -> c == c') t.cursors
 let position t c =
   validate t c;
   let rec aux n = function
-    | [] -> assert false
+    | [] -> raise Not_found
     | (n',c') :: xs ->
       let n = n + n' in
       if c == c' then n
@@ -46,21 +46,22 @@ let compare c1 c2 =
 let remove t ~at ~len =
   assert (at >= 0);
   assert (len >= 0);
-  let rec skip_right len = function
+  let rec skip_right shift len = function
     | [] -> []
     | (n, c) :: xs when len <= n ->
-      (n - len, c) :: xs
+      (shift + n - len, c) :: xs
     | (n, c) :: xs ->
-      skip_right (len - n) xs
+      skip_right shift (len - n) xs
   in
   let rec skip_left at = function
     | [] -> []
     | (n,c) :: xs when at < n ->
-      skip_right len ((n - at, c) :: xs)
+      skip_right at len ((n - at, c) :: xs)
     | (n,_ as cell) :: xs ->
       cell :: skip_left (at - n) xs
   in
   update t (skip_left at)
+
 
 let insert t ~at ~len =
   assert (at >= 0);
@@ -100,34 +101,22 @@ let remove_between t c1 c2 =
 let remove_before t c len =
   validate t c;
   assert (len >= 0);
-  let pos = position t c in
-  let at, len =
-    if pos < len then
-      0, pos
-    else
-      pos - len, len
-  in
-  let t = remove t ~at ~len in
-  let rec clean = function
+  let at = position t c - len in
+  assert (member t c);
+  let rec clean n = function
     | [] -> assert false
-    | (n, c') :: xs ->
-      assert (n = 0);
-      if c == c' then
-        xs
-      else
-         clean xs
+    | (_, c') :: xs when c == c' ->
+      (max 0 n, c') :: xs
+    | _ :: xs -> clean n xs
   in
-  let rec cleanup pos = function
+  let rec seek pos = function
     | [] -> assert false
-    | ((n,c') :: xs) as tail when n = pos ->
-      if c == c' then
-        tail
-      else (n, c) :: clean xs
-    | (n, _ as cell) :: xs ->
-      assert (pos > n);
-      cell :: cleanup (pos - n) xs
+    | (n,c') :: _ as tail when pos < n || (c == c' && pos = n) ->
+      clean pos tail
+    | x :: xs ->
+      x :: seek (pos - fst x) xs
   in
-  update t (cleanup at)
+  update t (seek at)
 
 let remove_after t c len =
   validate t c;
@@ -210,7 +199,7 @@ let put_before t c0 content =
   let rec aux = function
     | [] -> assert false
     | (n, c0') :: xs when c0 == c0' ->
-      (n, c) :: (0, c0) :: xs
+      (n, c) :: (0, c0') :: xs
     | x :: xs ->
       x :: aux xs
   in
@@ -229,20 +218,22 @@ let put_after t c0 content =
   update t aux, c
 
 let find_before t n =
-  let rec aux n = function
-    | [] -> None
-    | (n', _) :: _ when n < n' -> None
-    | (n', c) :: (n'', _) :: _ when n >= n' && n - n' <= n'' ->
-      Some c
-    | (n', _) :: xs ->
-      aux (n - n') xs
+  let rec aux n c = function
+    | [] -> c
+    | (n', _) :: _ when n' > n ->
+      c
+    | (n', c) :: xs ->
+      aux (n - n') c xs
   in
-  aux n t.cursors
+  match t.cursors with
+  | (n', c) :: xs when n >= n' ->
+    Some (aux (n - n') c xs)
+  | _ -> None
 
 let find_after t n =
   let rec aux n = function
     | [] -> None
-    | (n', c) :: _ when n < n' -> Some c
+    | (n', c) :: _ when n <= n' -> Some c
     | (n', _) :: xs ->
       aux (n - n') xs
   in
@@ -268,3 +259,12 @@ let cursor_after t c =
     | _ :: xs -> aux xs
   in
   aux t.cursors
+
+let to_list t =
+  let rec aux n = function
+    | [] -> []
+    | (n', c) :: xs ->
+      let n = n' + n in
+      (n, c) :: aux n xs
+  in
+  aux 0 t.cursors
