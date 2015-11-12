@@ -1,8 +1,6 @@
 open Sexp
 open Session
 
-module Buf = Buf_naive
-
 type substitution = {
   start: int;
   length: int;
@@ -62,16 +60,16 @@ let replace_sink commands sink =
 type cursor = {
   action: action option;
   commands: command_stream;
-  buffer: cursor lazy_t Buf.t ref;
-  beginning: cursor lazy_t Buf.cursor;
-  position: cursor lazy_t Buf.cursor;
+  buffer: cursor lazy_t Trope.t ref;
+  beginning: cursor lazy_t Trope.cursor;
+  position: cursor lazy_t Trope.cursor;
 }
 
 and action = cursor -> unit
 
-let get_action c = (Lazy.force (Buf.content c)).action
+let get_action c = (Lazy.force (Trope.content c)).action
 
-let is_closed cursor = not (Buf.member !(cursor.buffer) cursor.position)
+let is_closed cursor = not (Trope.member !(cursor.buffer) cursor.position)
 
 let sub ?action current =
   if is_closed current then current
@@ -82,8 +80,8 @@ let sub ?action current =
     in
     let rec cursor = lazy begin
       let buffer = current.buffer in
-      let buf', beginning = Buf.put_before !buffer current.position cursor in
-      let buf', position  = Buf.put_after  buf'    beginning cursor in
+      let buf', beginning = Trope.put_before !buffer current.position cursor in
+      let buf', position  = Trope.put_after  buf'    beginning cursor in
       buffer := buf';
       {action; buffer; commands = current.commands; beginning; position}
     end in
@@ -97,23 +95,23 @@ let text {buffer; commands; beginning; position} ?properties text =
       let props = transform_list ~inj:void ~map:(fun x -> x) props in
       [S "text"; T text; S ":properties"; props]
   in*)
-  if Buf.member !buffer position then begin
+  if Trope.member !buffer position then begin
     push_command commands
-      { start = Buf.position !buffer position;
+      { start = Trope.position !buffer position;
         length = 0;
         replacement = text;
         action = (get_action beginning <> None) };
-    buffer := Buf.insert_before !buffer position (String.length text)
+    buffer := Trope.insert_before !buffer position (String.length text)
   end
 
 let clear {buffer; commands; beginning; position} =
-  if Buf.member !buffer position then begin
-    let start = Buf.position !buffer beginning in
-    let current = Buf.position !buffer position in
+  if Trope.member !buffer position then begin
+    let start = Trope.position !buffer beginning in
+    let current = Trope.position !buffer position in
     push_command commands
       { start; length = current - start;
         replacement = ""; action = false };
-    buffer := Buf.remove_between !buffer beginning position
+    buffer := Trope.remove_between !buffer beginning position
   end
 
 let link cursor ?properties msg action =
@@ -129,14 +127,14 @@ let create_buffer () =
     closed = false;
     queue  = [];
   } in
-  let buffer = ref (Buf.create ()) in
+  let buffer = ref (Trope.create ()) in
   let handler = M (Sink (function
     | Feed (C (S "sink", M (Sink sink))) ->
       (*Printf.eprintf "GOT SINK!\n";*)
       replace_sink commands (Some sink)
     | Feed (C (S "click", I point)) ->
       (*Printf.eprintf "GOT CLICK %d!\n" point;*)
-      begin match Buf.find_before !buffer point with
+      begin match Trope.find_before !buffer point with
         | None ->
           (*Printf.eprintf "NO CURSOR AT %d :(!\n" point;*)
           ()
@@ -146,7 +144,7 @@ let create_buffer () =
             (*Printf.eprintf "NO ACTION AT %d :(!\n" point;*)
             ()
           | Some action ->
-            action (Lazy.force (Buf.content cursor))
+            action (Lazy.force (Trope.content cursor))
       end;
     | Feed r -> cancel r
     | Quit (S "close") ->
@@ -157,8 +155,8 @@ let create_buffer () =
     ))
   in
   let rec cursor = lazy begin
-    let buf, beginning = Buf.put_cursor !buffer ~at:0 cursor in
-    let buf, position  = Buf.put_after buf beginning cursor in
+    let buf, beginning = Trope.put_cursor !buffer ~at:0 cursor in
+    let buf, position  = Trope.put_after buf beginning cursor in
     buffer := buf;
     {buffer; beginning; position; commands; action = None}
   end

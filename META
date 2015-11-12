@@ -1,10 +1,7 @@
 version = "0.1"
 description = "A toolkit for communicating with Emacs"
 
-package "sexp" (
-  version = "0.1"
-  description = "An emacs S-exp reader and writer"
-  archive(byte) = "emacs_sexp.cmo"
-  archive(native) = "emacs_sexp.cmx"
-)
+requires = "unix"
 
+archive(byte) = "sturgeon.cma"
+archive(native) = "sturgeon.cmxa"
