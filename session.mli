@@ -29,15 +29,14 @@ type 'a error =
   | `Exceptions_during_shutdown of exn list
   ]
 
-type endpoint = { stdout : basic -> unit; query : t -> unit; } and status
+type output = basic -> unit
+type status
 
 val connect :
-  ?stderr:(_ error -> unit) ->
-  (remote_query:(t -> unit) -> endpoint) ->
-  endpoint * status
+  ?greetings:t -> ?cogreetings:(t -> unit) ->
+  ?stderr:(_ error -> unit) -> output -> output * status
 
-val close : endpoint -> unit
-val
+val close : output -> unit
 
 val pending_sessions : status -> int
 val is_closed : status -> bool

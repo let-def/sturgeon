@@ -19,11 +19,6 @@ let add_finalizer (dual : t neg) =
   let finalize f = f finalize_message in
   Gc.finalise finalize dual
 
-type endpoint = {
-  stdout: basic -> unit;
-  query: t -> unit;
-}
-
 (* Cancel : abort computation, release ressources  *)
 let lower_cancel ?stderr (t : t) : basic =
   let exns = ref [] in
@@ -76,25 +71,26 @@ type 'a error =
   ]
 
 type status = {
-  mutable closed: bool;
+  mutable state: [`Greetings | `Main | `Closed];
   mutable gensym: int;
   table: (int, dual) Hashtbl.t;
 }
+
+type output = basic -> unit
 
 let gensym status =
   status.gensym <- status.gensym + 1;
   status.gensym
 
-let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
-
-  let endpoint = ref {
-      query = (fun _ -> invalid_arg "Query before initialization");
-      stdout = (fun _ -> invalid_arg "Output before initialization");
-    }
-  in
+let connect
+    ?(greetings=sym_nil) ?cogreetings
+    ?(stderr : ('a error -> unit) option)
+    stdout
+  : output * status
+  =
 
   let status = {
-    closed = false;
+    state = `Greetings;
     gensym = 0;
     table = Hashtbl.create 7;
   } in
@@ -128,7 +124,7 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
         let is_once = kind = "once" in
         let closed = ref false in
         let dual msg =
-          if status.closed then
+          if status.state = `Closed then
             match msg with
             | Feed x -> cancel ?stderr x
             | Quit _ -> ()
@@ -146,10 +142,10 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
           else match msg with
             | Feed x ->
               closed := is_once;
-              (!endpoint).stdout (C (S "feed", C (addr, lower x)))
+              stdout (C (S "feed", C (addr, lower x)))
             | Quit x ->
               closed := true;
-              (!endpoint).stdout (C (S "quit", C (addr, x)))
+              stdout (C (S "quit", C (addr, x)))
         in
         add_finalizer dual;
         M (if is_once then Once dual else Sink dual)
@@ -164,78 +160,78 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
     | _ -> raise Not_found
   in
 
-  let t = {
-    stdout = begin
-      if status.closed then ignore
-      else function
-        | C (S "query", payload) ->
-          (!endpoint).query (upper payload)
-        | C (S "feed", C (addr, payload)) as msg ->
-          let x = upper payload in
-          begin match get_addr addr with
-            | addr, Once t ->
-              Hashtbl.remove status.table addr;
-              t (Feed x)
-            | _, Sink t -> t (Feed x)
-            | exception Not_found ->
-              cancel ?stderr x;
-              begin match stderr with
-                | Some f -> f (`Feed_unknown msg)
-                | None -> ()
-              end
+  let remote (cmd : basic) =
+    match status.state with
+    | `Closed -> cancel ?stderr (upper cmd)
+    | `Greetings ->
+      begin match cmd with
+        | C (S "greetings", C (I 1, payload)) ->
+          status.state <- `Main;
+          begin match cogreetings with
+            | Some f -> f (upper payload)
+            | None -> cancel ?stderr (upper payload)
           end
-        | C (S "quit", C (addr, x)) as msg ->
-          begin match get_addr addr with
-            | addr, (Once t | Sink t) ->
-              Hashtbl.remove status.table addr;
-              t (Quit x)
-            | exception Not_found ->
-              begin match stderr with
-                | Some f -> f (`Quit_unknown msg)
-                | None -> ()
-              end
-          end
-        | S "end" ->
-          status.closed <- true;
-          let exns = ref [] in
-          Hashtbl.iter (fun _ (Sink t | Once t) ->
-              try t cancel_message
-              with exn -> exns := exn :: !exns
-            ) status.table;
-          Hashtbl.reset status.table;
-          begin try (!endpoint).stdout (S "end")
-            with exn -> exns := exn :: !exns
-          end;
-          if !exns <> [] then
+        | _ -> cancel ?stderr (upper cmd)
+      end
+    | `Main -> match cmd with
+      | C (S "feed", C (addr, payload)) as msg ->
+        let x = upper payload in
+        begin match get_addr addr with
+          | addr, Once t ->
+            Hashtbl.remove status.table addr;
+            t (Feed x)
+          | _, Sink t -> t (Feed x)
+          | exception Not_found ->
+            cancel ?stderr x;
             begin match stderr with
-              | Some f -> f (`Exceptions_during_shutdown !exns)
+              | Some f -> f (`Feed_unknown msg)
               | None -> ()
             end
-        | cmd ->
+        end
+
+      | C (S "quit", C (addr, x)) as msg ->
+        begin match get_addr addr with
+          | addr, (Once t | Sink t) ->
+            Hashtbl.remove status.table addr;
+            t (Quit x)
+          | exception Not_found ->
+            begin match stderr with
+              | Some f -> f (`Quit_unknown msg)
+              | None -> ()
+            end
+        end
+
+      | S "end" ->
+        status.state <- `Closed;
+        let exns = ref [] in
+        Hashtbl.iter (fun _ (Sink t | Once t) ->
+            try t cancel_message
+            with exn -> exns := exn :: !exns
+          ) status.table;
+        Hashtbl.reset status.table;
+        begin try stdout (S "end")
+          with exn -> exns := exn :: !exns
+        end;
+        if !exns <> [] then
           begin match stderr with
-            | Some f -> f (`Invalid_command cmd)
+            | Some f -> f (`Exceptions_during_shutdown !exns)
             | None -> ()
           end
-    end;
 
-    query = begin fun t ->
-      if status.closed then (
-        cancel ?stderr t;
-        match stderr with
-        | None -> ()
-        | Some f -> f (`Query_after_eof t)
-      ) else
-        (!endpoint).stdout (C (S "query", lower t))
-    end
+      | cmd ->
+        cancel ?stderr (upper cmd);
+        begin match stderr with
+          | Some f ->
+            f (`Invalid_command cmd)
+          | None -> ()
+        end
+  in
+  stdout (lower (C (S "greetings", C (I 1, greetings))));
+  remote, status
 
-  } in
-
-  endpoint := f_endpoint ~remote_query:t.query;
-  t
-
-let close endpoint = endpoint.stdout (S "end")
+let close remote = remote (S "end")
 
 let pending_sessions status =
   Hashtbl.length status.table
 
-let is_closed status = status.closed
+let is_closed status = status.state = `Closed

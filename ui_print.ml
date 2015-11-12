@@ -175,11 +175,9 @@ let create_buffer () =
   in
   handler, Lazy.force cursor
 
-let open_buffer endpoint name =
+let buffer_greetings name =
   let handler, cursor = create_buffer () in
-  endpoint.query (sexp_of_list
-                    [S "create-buffer"; T name; handler]);
-  cursor
+  sexp_of_list [S "create-buffer"; T name; handler], cursor
 
 let accept = function
   | M (Sink t) ->

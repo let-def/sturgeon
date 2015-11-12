@@ -3,7 +3,7 @@
 
 (defun sturgeon--debug (prefix content)
   (when sturgeon-debug
-    (message "%s %s" prefix content)))
+    (message "%s %S" prefix content)))
 
 (defun sturgeon--filter (proc lines)
   (setq lines (split-string lines "\n"))
@@ -112,7 +112,7 @@
     (cons (car obj) key)))
 
 (defun sturgeon-cancel (sexp)
-  (message "cancelling %S" sexp)
+  (sturgeon--debug "cancelling" sexp)
   (cond
    ((sturgeon--app-p sexp)
     (with-demoted-errors "cancelling closure %S"
@@ -192,9 +192,13 @@
   (let ((cmd (car-safe answer))
         (payload (cdr-safe answer)))
     (cond
-     ((eq cmd 'query)
-      (funcall (process-get process 'sturgeon-handler)
-               (sturgeon--higher process (cdr-safe answer))))
+     ((and (eq cmd 'greetings) (eq 1 (car-safe payload)))
+      (with-demoted-errors "greetings %S"
+        (let ((cogreetings (process-get process 'sturgeon-cogreetings)))
+          (if (not cogreetings)
+              (sturgeon--cancel-low process answer)
+            (process-put process 'sturgeon-cogreetings nil)
+            (funcall cogreetings (sturgeon--higher process (cdr payload)))))))
      ((eq cmd 'feed)
       (with-demoted-errors "feed %S"
         (sturgeon--wake-up process
@@ -218,30 +222,28 @@
 
 ;; Main functions
 
-(defun sturgeon-start (process &optional handler)
-  (if (process-get process 'sturgeon-handler)
-      (process-put process 'sturgeon-handler (or handler #'sturgeon-cancel))
-    (process-put process 'sturgeon-lines nil)
-    (process-put process 'sturgeon-handler (or handler #'sturgeon-cancel))
-    (process-put process 'sturgeon-table (cons 0 (make-hash-table)))
-    (process-put process 'sturgeon-roots
-                 (cons (make-hash-table)
-                       (make-hash-table :weakness 'value)))
-    (set-process-filter process #'sturgeon--filter)
-    (setq sturgeon--processes (cons process sturgeon--processes)))
+(defun sturgeon-start (process &rest rest)
+  (process-put process 'sturgeon-lines nil)
+  (process-put process 'sturgeon-table (cons 0 (make-hash-table)))
+  (process-put process 'sturgeon-cogreetings (plist-get rest :cogreetings))
+  (process-put process 'sturgeon-roots
+               (cons (make-hash-table)
+                     (make-hash-table :weakness 'value)))
+  (set-process-filter process #'sturgeon--filter)
+  (setq sturgeon--processes (cons process sturgeon--processes))
+  (sturgeon--send
+   process
+   (cons 'greetings (cons 1 (sturgeon--lower process (plist-get rest :greetings)))))
   process)
 
-(defun sturgeon-query (process query)
-  (sturgeon--send process (cons 'query (sturgeon--lower process query))))
-
-(defun sturgeon-start-process (name buffer path args &optional handler)
+(defun sturgeon-start-process (name buffer path args &rest rest)
   (let* ((start-file-process
           (if (fboundp 'start-file-process)
               #'start-file-process
             #'start-process))
          (process-connection-type nil)
          (process (apply start-file-process name buffer path args)))
-    (sturgeon-start process handler)))
+    (apply 'sturgeon-start process rest)))
 
 ;; Rich printing facility
 
@@ -288,7 +290,6 @@
          (t (sturgeon-cancel value)))))))
 
 (defun sturgeon-ui-handler (value)
-  (message "%S" value)
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
            (let ((buffer (get-buffer-create (cadr value)))
@@ -298,40 +299,40 @@
               (cons 'sink (sturgeon-ui--make-cursor buffer (point-min) sink)))))
           (t (sturgeon-cancel value)))))
 
-(defun sturgeon-ui-connect (process buffer &rest args)
+(defun sturgeon-ui-greetings (buffer &rest args)
   (lexical-let ((buffer buffer) (marker (point-marker)))
-    (sturgeon-query process
-      (cons
-       'connect-ui
-       (cons
-        (lambda-sink (kind value)
-          (if (not (eq kind 'feed))
-              (progn
-                (sturgeon-cancel value)
-                ;; (with-current-buffer buffer
-                ;;   (save-excursion
-                ;;     (goto-char marker)
-                ;;     (insert "Connection closed.\n")))
-                )
-            (cond
-              ((eq (car-safe value) 'accept)
-               (switch-to-buffer buffer)
-               (let ((point (marker-position marker))
-                     (sink (cdr value)))
-                 (app-any sink
-                          (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
-              ((eq (car-safe value) 'title)
-               (with-current-buffer buffer (rename-buffer (cdr value))))
-              (t (sturgeon-cancel value)))))
-        args)))))
+    (cons
+     'ui-text
+     (cons
+      (lambda-sink (kind value)
+        (if (not (eq kind 'feed))
+            (progn
+              (sturgeon-cancel value)
+              ;; (with-current-buffer buffer
+              ;;   (save-excursion
+              ;;     (goto-char marker)
+              ;;     (insert "Connection closed.\n")))
+              )
+          (cond
+           ((eq (car-safe value) 'accept)
+            (switch-to-buffer buffer)
+            (let ((point (marker-position marker))
+                  (sink (cdr value)))
+              (app-any sink
+                       (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
+           ((eq (car-safe value) 'title)
+            (with-current-buffer buffer (rename-buffer (cdr value))))
+           (t (sturgeon-cancel value)))))
+      args))))
 
 (defun sturgeon-launch (filename)
-  (interactive "f")
-  (let* ((buffer (get-buffer-create filename))
-         (process (sturgeon-start-process
-                   filename buffer
-                   filename nil)))
-    (sturgeon-ui-connect process buffer nil)))
+  (interactive "fProgram path: ")
+  (let ((buffer (get-buffer-create filename)))
+    (sturgeon-start-process
+     filename buffer
+     filename nil
+     :greetings (sturgeon-ui-greetings buffer nil))
+    (switch-to-buffer buffer)))
 
 ;; Done
 
