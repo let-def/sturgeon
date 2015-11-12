@@ -298,23 +298,40 @@
               (cons 'sink (sturgeon-ui--make-cursor buffer (point-min) sink)))))
           (t (sturgeon-cancel value)))))
 
-(defun sturgeon-ui-connect (process &rest args)
-  (lexical-let ((buffer (current-buffer)) (marker (point-marker)))
+(defun sturgeon-ui-connect (process buffer &rest args)
+  (lexical-let ((buffer buffer) (marker (point-marker)))
     (sturgeon-query process
-      (list
+      (cons
        'connect-ui
-       (lambda-once (kind value)
-         (if (not (eq kind 'feed))
-             (progn
-               (sturgeon-cancel value)
-               (with-current-buffer buffer
-                 (save-excursion
-                   (goto-char marker)
-                   (insert "Connection closed.\n"))))
-           (app-any
-            sink
-            (cons 'sink (sturgeon-ui--make-cursor buffer (marker-position marker) sink)))))
-       args))))
+       (cons
+        (lambda-sink (kind value)
+          (if (not (eq kind 'feed))
+              (progn
+                (sturgeon-cancel value)
+                ;; (with-current-buffer buffer
+                ;;   (save-excursion
+                ;;     (goto-char marker)
+                ;;     (insert "Connection closed.\n")))
+                )
+            (cond
+              ((eq (car-safe value) 'accept)
+               (switch-to-buffer buffer)
+               (let ((point (marker-position marker))
+                     (sink (cdr value)))
+                 (app-any sink
+                          (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
+              ((eq (car-safe value) 'title)
+               (with-current-buffer buffer (rename-buffer (cdr value))))
+              (t (sturgeon-cancel value)))))
+        args)))))
+
+(defun sturgeon-launch (filename)
+  (interactive "f")
+  (let* ((buffer (get-buffer-create filename))
+         (process (sturgeon-start-process
+                   filename buffer
+                   filename nil)))
+    (sturgeon-ui-connect process buffer nil)))
 
 ;; Done
 

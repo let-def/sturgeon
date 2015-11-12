@@ -123,7 +123,7 @@ let link cursor ?properties msg action =
 let printf (cursor : cursor) ?properties fmt =
   Printf.ksprintf (text cursor ?properties) fmt
 
-let open_buffer endpoint name =
+let create_buffer () =
   let commands = {
     sink   = None;
     closed = false;
@@ -163,6 +163,17 @@ let open_buffer endpoint name =
     {buffer; beginning; position; commands; action = None}
   end
   in
-    endpoint.query (sexp_of_list
+  handler, Lazy.force cursor
+
+let open_buffer endpoint name =
+  let handler, cursor = create_buffer () in
+  endpoint.query (sexp_of_list
                     [S "create-buffer"; T name; handler]);
-  Lazy.force cursor
+  cursor
+
+let accept = function
+  | M (Sink t) ->
+    let handler, cursor = create_buffer () in
+    t (Feed (C (S "accept", handler)));
+    cursor, (fun str -> t (Feed (C (S "title", T str))))
+  | _ -> invalid_arg "Ui_print.accept"
