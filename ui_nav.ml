@@ -43,7 +43,7 @@ let render_header t cursor =
   text cursor " ";
   link cursor ">>" (fun _ -> next t)
 
-let navigator cursor label content =
+let make cursor label content =
   let header = sub cursor in
   text cursor " ";
   let title = sub cursor in
@@ -53,6 +53,6 @@ let navigator cursor label content =
   render_header t header;
   refresh t
 
-let goto t label content =
+let modal t label content =
   t.next <- [(label, content)];
   next t
