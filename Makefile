@@ -12,6 +12,9 @@ SOURCES =                    \
 
 PACKS = grenier.baltree grenier.orderme
 
+OCAMLFLAGS += -g
+OCAMLLDFLAGS += -g
+
 LIB_PACK_NAME = sturgeon
 RESULT = sturgeon
 
