@@ -15,6 +15,10 @@ type dual =
 
 and t = dual sexp
 
+val cancel :
+  ?stderr:([> `Exceptions_during_cancellation of t * exn list] -> unit) ->
+  t -> unit
+
 type 'a error =
   [ `Already_closed  of t result
   | `Query_after_eof of t
@@ -25,15 +29,15 @@ type 'a error =
   | `Exceptions_during_shutdown of exn list
   ]
 
-type endpoint = { stdout : basic -> unit; query : t -> unit; }
+type endpoint = { stdout : basic -> unit; query : t -> unit; } and status
 
 val connect :
   ?stderr:(_ error -> unit) ->
   (remote_query:(t -> unit) -> endpoint) ->
-  endpoint
+  endpoint * status
 
 val close : endpoint -> unit
+val
 
-val cancel :
-  ?stderr:([> `Exceptions_during_cancellation of t * exn list] -> unit) ->
-  t -> unit
+val pending_sessions : status -> int
+val is_closed : status -> bool

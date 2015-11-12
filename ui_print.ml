@@ -67,6 +67,18 @@ type cursor = {
 
 and action = cursor -> unit
 
+let closed =
+  let rec cursor = lazy begin
+    let b, c = Trope.put_cursor (Trope.create ()) ~at:0 cursor in
+    { action = None;
+      commands = { sink = None; closed = true; queue = [] };
+      buffer = ref b;
+      beginning = c;
+      position = c;
+    }
+  end in
+  Lazy.force cursor
+
 let get_action c = (Lazy.force (Trope.content c)).action
 
 let is_closed cursor = not (Trope.member !(cursor.buffer) cursor.position)

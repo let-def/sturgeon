@@ -12,10 +12,6 @@ type dual =
 
 and t = dual sexp
 
-let gensym () =
-  let counter = ref 0 in
-  fun () -> incr counter; !counter
-
 let cancel_message = Quit (S "cancel")
 let finalize_message = Quit (S "finalize")
 
@@ -79,6 +75,16 @@ type 'a error =
   | `Exceptions_during_shutdown of exn list
   ]
 
+type status = {
+  mutable closed: bool;
+  mutable gensym: int;
+  table: (int, dual) Hashtbl.t;
+}
+
+let gensym status =
+  status.gensym <- status.gensym + 1;
+  status.gensym
+
 let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
 
   let endpoint = ref {
@@ -87,11 +93,11 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
     }
   in
 
-  let eof = ref false in
-
-  let gensym = gensym () in
-
-  let table : (int, dual) Hashtbl.t = Hashtbl.create 7 in
+  let status = {
+    closed = false;
+    gensym = 0;
+    table = Hashtbl.create 7;
+  } in
 
   (* Lower: turn closures into ground sexp *)
 
@@ -100,8 +106,8 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
       | C (S "meta", x) -> C (S "meta", C (S "escape", x))
       | x -> x
     and inj (dual : dual) : basic =
-      let addr = gensym () in
-      Hashtbl.add table addr dual;
+      let addr = gensym status in
+      Hashtbl.add status.table addr dual;
       let sym = match dual with
         | Once _ -> S "once"
         | Sink _ -> S "sink"
@@ -122,7 +128,7 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
         let is_once = kind = "once" in
         let closed = ref false in
         let dual msg =
-          if !eof then
+          if status.closed then
             match msg with
             | Feed x -> cancel ?stderr x
             | Quit _ -> ()
@@ -154,13 +160,13 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
   in
 
   let get_addr = function
-    | I addr -> addr, Hashtbl.find table addr
+    | I addr -> addr, Hashtbl.find status.table addr
     | _ -> raise Not_found
   in
 
   let t = {
     stdout = begin
-      if !eof then ignore
+      if status.closed then ignore
       else function
         | C (S "query", payload) ->
           (!endpoint).query (upper payload)
@@ -168,7 +174,7 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
           let x = upper payload in
           begin match get_addr addr with
             | addr, Once t ->
-              Hashtbl.remove table addr;
+              Hashtbl.remove status.table addr;
               t (Feed x)
             | _, Sink t -> t (Feed x)
             | exception Not_found ->
@@ -181,7 +187,7 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
         | C (S "quit", C (addr, x)) as msg ->
           begin match get_addr addr with
             | addr, (Once t | Sink t) ->
-              Hashtbl.remove table addr;
+              Hashtbl.remove status.table addr;
               t (Quit x)
             | exception Not_found ->
               begin match stderr with
@@ -190,13 +196,16 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
               end
           end
         | S "end" ->
-          eof := true;
+          status.closed <- true;
           let exns = ref [] in
           Hashtbl.iter (fun _ (Sink t | Once t) ->
               try t cancel_message
               with exn -> exns := exn :: !exns
-            ) table;
-          Hashtbl.reset table;
+            ) status.table;
+          Hashtbl.reset status.table;
+          begin try (!endpoint).stdout (S "end")
+            with exn -> exns := exn :: !exns
+          end;
           if !exns <> [] then
             begin match stderr with
               | Some f -> f (`Exceptions_during_shutdown !exns)
@@ -210,7 +219,7 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
     end;
 
     query = begin fun t ->
-      if !eof then (
+      if status.closed then (
         cancel ?stderr t;
         match stderr with
         | None -> ()
@@ -225,3 +234,8 @@ let connect ?(stderr : ('a error -> unit) option) f_endpoint : endpoint =
   t
 
 let close endpoint = endpoint.stdout (S "end")
+
+let pending_sessions status =
+  Hashtbl.length status.table
+
+let is_closed status = status.closed
