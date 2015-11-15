@@ -253,7 +253,7 @@
   (let* ((action (button-get x 'sturgeon-sink))
          (marker (button-get x 'sturgeon-marker))
          (offset (- (marker-position x) (marker-position marker))))
-    (app-sink action (cons 'click (1+ offset)))))
+    (app-sink action (cons 'click offset))))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((buffer buffer) (sink sink) (marker (make-marker)))
