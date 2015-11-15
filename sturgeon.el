@@ -339,6 +339,24 @@
   (let ((default-directory server))
     (call-interactively 'sturgeon-launch)))
 
+(defun sturgeon-connect (filename)
+  (interactive (list
+                (let ((insert-default-directory nil))
+                  (read-file-name "Socket path: "
+                                  (concat temporary-file-directory "sturgeon."
+                                          (int-to-string (user-uid)) "/")))))
+  (let ((buffer (get-buffer-create filename)))
+    (unless (file-name-absolute-p filename)
+      (setq filename
+            (concat temporary-file-directory
+                    "sturgeon." (int-to-string (user-uid)) "/"
+                    filename)))
+    (sturgeon-start-process
+     filename buffer
+     "socat" (list "-" (concat "UNIX-CONNECT:" filename))
+     :greetings (sturgeon-ui-greetings buffer nil))
+    (switch-to-buffer buffer)))
+
 ;; Done
 
 (provide 'sturgeon)
