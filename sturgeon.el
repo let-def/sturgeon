@@ -334,6 +334,11 @@
      :greetings (sturgeon-ui-greetings buffer nil))
     (switch-to-buffer buffer)))
 
+(defun sturgeon-remote-launch (server)
+  (interactive "fServer: ")
+  (let ((default-directory server))
+    (call-interactively 'sturgeon-launch)))
+
 ;; Done
 
 (provide 'sturgeon)
