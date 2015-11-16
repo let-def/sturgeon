@@ -249,44 +249,146 @@
 
 (require 'button)
 
+(defvar-local sturgeon--cursors nil)
+(defvar-local sturgeon--revision 0)
+(defconst sturgeon--active-cursor nil)
+
+;; cursor = [0:buffer 1:sink 2:marker 3:remote-revision 4:changes]
+(defun sturgeon--change-cursor (cursor beg end len)
+  (let ((point (marker-position (elt cursor 2))))
+    (unless (< end point)
+      ;; Adjust coordinates
+      (setq beg (- beg point))
+      (when (< beg 0)
+        (setq len (+ len beg))
+        (setq beg 0))
+      (setq end (- end point))
+      ;; Record changes
+      (let ((revisions (elt cursor 4)))
+        (unless (eq len 0)
+          (setq revisions
+                (cons (vector sturgeon--revision 'remove beg len) revisions)))
+        (unless (eq beg end)
+          (setq revisions
+                (cons (vector sturgeon--revision 'insert beg (- end beg)) revisions)))
+        (aset cursor 4 revisions))
+      ;; Commit changes
+      (let ((action (list 'substitute
+                      (cons (elt cursor 3) sturgeon--revision)
+                      (cons beg len)
+                      (buffer-substring-no-properties (+ point beg) (+ point end))
+                      nil)))
+        (message "patch %S" action)
+        (app-sink (elt cursor 1) action)))))
+
+(defun sturgeon--change-hook (beg end len)
+  (setq sturgeon--revision (1+ sturgeon--revision))
+  (dolist (cursor sturgeon--cursors)
+    (unless (eq cursor sturgeon--active-cursor)
+      (sturgeon--change-cursor cursor beg end len))))
+
+(defun sturgeon--update-revisions (cursor revisions)
+  (aset cursor 3 (cdr revisions))
+  (let ((pred (lambda (change) (<= (elt change 0) (car revisions)))))
+    (aset cursor 4 (delete-if pred (elt cursor 4)))))
+
+(defun sturgeon--remap (s l x)
+  (if (< x s) x
+    (if (> x (+ s l))
+      (- x l)
+      s)))
+
+(defun sturgeon--commute-op (cursor k2 s2 l2)
+  (dolist (op1 (reverse (elt cursor 4)))
+    (let* ((k1 (elt op1 1))
+           (s1 (elt op1 2))
+           (l1 (elt op1 3)))
+      (message "commuting %S %S" k1 k2)
+      (cond
+       ((and (eq k1 'remove) (eq k2 'remove))
+        (let ((e2 (sturgeon--remap s1 l1 (+ s2 l2))))
+          (setq s2 (sturgeon--remap s1 l1 s2))
+          (setq l2 (- e2 s2))))
+
+       ((and (eq k1 'remove) (eq k2 'insert))
+        (unless (< s2 s1)
+          (if (< s2 (+ s1 l1))
+              (setq l2 0)
+            (setq s2 (- s2 l1)))))
+
+       ((and (eq k1 'insert) (eq k2 'remove))
+        (if (< s1 s2)
+            (setq s2 (+ s2 l1))
+          (if (< s1 (+ s2 l2))
+              (setq l2 (+ l2 l1)))))
+
+       ((and (eq k1 'insert) (eq k2 'insert))
+        (if (< s1 s2)
+          (setq s2 (+ s2 l1))))
+
+       (t
+         (message "k1:%S k2:%S" k1 k2)
+         (assert nil)))))
+  (cons s2 l2))
+
 (defun sturgeon-ui--cursor-action (x)
-  (let* ((action (button-get x 'sturgeon-sink))
-         (marker (button-get x 'sturgeon-marker))
+  (let* ((cursor (button-get x 'sturgeon-cursor))
+         (sink   (elt cursor 1))
+         (marker (elt cursor 2))
          (offset (- (marker-position x) (marker-position marker))))
-    (app-sink action (cons 'click offset))))
+    (app-sink sink (cons
+                    'click
+                    (cons (cons (elt cursor 3) sturgeon--revision) offset)))))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
-  (lexical-let ((buffer buffer) (sink sink) (marker (make-marker)))
-    (set-marker marker point buffer)
-    (set-marker-insertion-type marker t)
+  (lexical-let ((cursor (vector
+                          buffer
+                          sink
+                          (make-marker)
+                          0
+                          nil)))
+    (set-marker (elt cursor 2) point buffer)
+    (set-marker-insertion-type (elt cursor 2) t)
+    (setq sturgeon--cursors (cons cursor sturgeon--cursors))
+    (make-local-variable 'after-change-functions)
+    (add-hook 'after-change-functions 'sturgeon--change-hook)
+
     (lambda-sink (kind value)
       ;; (when (eq kind 'quit) ...)
       (when (eq kind 'feed)
         (cond
          ;; Clear sub regions
          ((eq (car value) 'substitute)
-          (let ((start  (+ (marker-position marker) (cadr value)))
-                (length (caddr value))
-                (text   (cadddr value))
-                (action (cadddr (cdr value)))
-                (inhibit-read-only t))
+          (let* ((buffer    (elt cursor 0))
+                 (marker    (elt cursor 2))
+                 (revisions (elt value 1))
+                 (positions (elt value 2))
+                 (text      (elt value 3))
+                 (action    (elt value 4))
+                 (start     (+ (marker-position marker) (car positions)))
+                 (length    (cdr positions))
+                 (inhibit-read-only t)
+                 (sturgeon--active-cursor cursor))
+            (sturgeon--update-revisions cursor revisions)
             (with-current-buffer buffer
               (save-excursion
                 (set-marker-insertion-type marker nil)
-                (goto-char start)
                 (when (> length 0)
-                  (delete-char length nil))
+                  (let ((pos (sturgeon--commute-op cursor 'remove start length)))
+                   (when (> (cdr pos) 0)
+                     (goto-char (car pos))
+                     (delete-char (cdr pos) nil))))
                 (when (and text (> (length text) 0))
-                  (if (not action) (insert (propertize text 'read-only t))
-                    (insert-text-button
-                     text
-                     'action 'sturgeon-ui--cursor-action
-                     'sturgeon-sink sink
-                     'sturgeon-marker marker
-                     'read-only t
-                     )))
-                  (set-marker-insertion-type marker t)
-                  ))))
+                  (let ((pos (sturgeon--commute-op cursor 'insert start (length text))))
+                   (when (> (cdr pos) 0)
+                     ;;(setq text (propertize text 'read-only t))
+                     (goto-char (car pos))
+                     (if (not action) (insert text)
+                       (insert-text-button
+                        text
+                        'action 'sturgeon-ui--cursor-action
+                        'sturgeon-cursor cursor)))))
+                (set-marker-insertion-type marker t)))))
          (t (sturgeon-cancel value)))))))
 
 (defun sturgeon-ui-handler (value)

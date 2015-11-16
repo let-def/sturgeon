@@ -1,7 +1,9 @@
 open Sexp
 open Session
 
-type substitution = {
+type command = {
+  remote_revision: int;
+  local_revision: int;
   start: int;
   length: int;
   replacement: string;
@@ -11,14 +13,15 @@ type substitution = {
 type command_stream = {
   mutable sink: t neg option;
   mutable closed: bool;
-  mutable queue: substitution list;
+  mutable queue: command list;
 }
 
-let send_command sink {start; length; replacement; action} =
+let send_command sink
+    {start; length; remote_revision; local_revision; replacement; action} =
   let cmd = sexp_of_list [
       S "substitute";
-      I start;
-      I length;
+      C (I remote_revision, I local_revision);
+      C (I start, I length);
       T replacement;
       (if action then sym_t else sym_nil);
     ]
@@ -57,10 +60,23 @@ let replace_sink commands sink =
     commands.sink <- sink
   | None -> ()
 
-type cursor = {
+type op =
+  | R of int * int
+  | I of int * int
+
+type buffer = {
+  mutable trope: cursor lazy_t Trope.t;
+  mutable remote: int;
+
+  mutable local: int;
+  mutable revisions: (int * op) list;
+  mutable rev_tail: (int * op) list;
+}
+
+and cursor = {
   action: action option;
   commands: command_stream;
-  buffer: cursor lazy_t Trope.t ref;
+  buffer: buffer;
   beginning: cursor lazy_t Trope.cursor;
   position: cursor lazy_t Trope.cursor;
 }
@@ -69,10 +85,11 @@ and action = cursor -> unit
 
 let closed =
   let rec cursor = lazy begin
-    let b, c = Trope.put_cursor (Trope.create ()) ~at:0 cursor in
+    let trope, c = Trope.put_cursor (Trope.create ()) ~at:0 cursor in
     { action = None;
       commands = { sink = None; closed = true; queue = [] };
-      buffer = ref b;
+      buffer = { trope; remote = 0; local = 0;
+                 revisions = []; rev_tail = [] };
       beginning = c;
       position = c;
     }
@@ -81,7 +98,7 @@ let closed =
 
 let get_action c = (Lazy.force (Trope.content c)).action
 
-let is_closed cursor = not (Trope.member !(cursor.buffer) cursor.position)
+let is_closed cursor = not (Trope.member cursor.buffer.trope cursor.position)
 
 let sub ?action current =
   if is_closed current then current
@@ -91,11 +108,12 @@ let sub ?action current =
       | Some action -> action
     in
     let rec cursor = lazy begin
-      let buffer = current.buffer in
-      let buf', beginning = Trope.put_before !buffer current.position cursor in
-      let buf', position  = Trope.put_after  buf'    beginning cursor in
-      buffer := buf';
-      {action; buffer; commands = current.commands; beginning; position}
+      let {buffer; commands; position} = current in
+      let trope = buffer.trope in
+      let trope, beginning = Trope.put_before trope position  cursor in
+      let trope, position  = Trope.put_after  trope beginning cursor in
+      buffer.trope <- trope;
+      {action; buffer; commands; beginning; position}
     end in
     Lazy.force cursor
 
@@ -107,24 +125,105 @@ let text {buffer; commands; beginning; position} ?properties text =
       let props = transform_list ~inj:void ~map:(fun x -> x) props in
       [S "text"; T text; S ":properties"; props]
   in*)
-  if Trope.member !buffer position then begin
+  if Trope.member buffer.trope position then begin
+    let start = Trope.position buffer.trope position in
+    buffer.local <- buffer.local + 1;
+    buffer.revisions <- (buffer.local, I (start, String.length text))
+                       :: buffer.revisions;
     push_command commands
-      { start = Trope.position !buffer position;
-        length = 0;
-        replacement = text;
+      { start; length = 0; replacement = text;
+        remote_revision = buffer.remote;
+        local_revision = buffer.local;
         action = (get_action beginning <> None) };
-    buffer := Trope.insert_before !buffer position (String.length text)
+    buffer.trope <- Trope.insert_before buffer.trope position (String.length text)
   end
 
 let clear {buffer; commands; beginning; position} =
-  if Trope.member !buffer position then begin
-    let start = Trope.position !buffer beginning in
-    let current = Trope.position !buffer position in
+  if Trope.member buffer.trope position then begin
+    let start = Trope.position buffer.trope beginning in
+    let length = Trope.position buffer.trope position - start in
+    buffer.local <- buffer.local + 1;
+    buffer.revisions <- (buffer.local, R (start, length)) :: buffer.revisions;
     push_command commands
-      { start; length = current - start;
+      { start; length;
+        remote_revision = buffer.remote;
+        local_revision = buffer.local;
         replacement = ""; action = false };
-    buffer := Trope.remove_between !buffer beginning position
+    buffer.trope <- Trope.remove_between buffer.trope beginning position
   end
+
+let update_revisions buffer (local, remote) =
+  buffer.remote <- remote;
+  let rec filter = function
+    | (local', _) :: xs when local' <= local -> filter xs
+    | xs -> xs
+  in
+  let rec rev_filter acc = function
+    | (local', _) as x :: xs when local' > local ->
+      rev_filter (x :: acc) xs
+    | _ -> acc
+  in
+  begin match filter buffer.rev_tail with
+    | [] ->
+      buffer.rev_tail <- rev_filter [] buffer.revisions;
+      buffer.revisions <- []
+    | xs ->
+      buffer.rev_tail <- xs
+  end
+
+let commute_remove (_,op') (s2, l2) = match op' with
+  | R (s1, l1) ->
+    let remap x =
+      if x < s1 then
+        x
+      else if x > s1 + l1 then
+        x - l1
+      else s1
+    in
+    let e2 = s2 + l2 in
+    let s2 = remap s2 and e2 = remap e2 in
+    if e2 = s2 then
+      raise Not_found
+    else (s2, e2 - s2)
+  | I (s1, l1) ->
+    if s1 < s2 then
+      (s2 + l1, l2)
+    else if s1 >= s2 + l2 then
+      (s2, l2)
+    else
+      (s2, l2 + l1)
+
+let commute_point (_,op') s2 = match op' with
+  | R (s1, l1) ->
+    if s2 < s1 then
+      s2
+    else if s2 >= s1 + l1 then
+      (s2 - l1)
+    else
+      raise Not_found
+  | I (s1, l1) ->
+    if s1 <= s2 then
+      (s2 + l1)
+    else
+      s2
+
+let commute_remote_op buffer op_kind op_arg =
+  let flip f x y = f y x in
+  let op_arg = List.fold_left (flip op_kind) op_arg buffer.rev_tail in
+  let op_arg = List.fold_right op_kind buffer.revisions op_arg in
+  op_arg
+
+let apply_remote_op buffer op =
+  match
+    op,
+    match op with
+    | R (s, l) -> commute_remote_op buffer commute_remove (s, l)
+    | I (s, l) -> commute_remote_op buffer commute_point s, l
+  with
+  | exception Not_found -> ()
+  | _, (_, 0) -> ()
+  | R _, (at, len) -> buffer.trope <- Trope.remove buffer.trope ~at ~len
+  | I _, (at, len) -> buffer.trope <- Trope.insert buffer.trope ~at ~len
 
 let link cursor ?properties msg action =
   let cursor = sub ~action:(Some action) cursor in
@@ -139,25 +238,40 @@ let create_buffer () =
     closed = false;
     queue  = [];
   } in
-  let buffer = ref (Trope.create ()) in
+  let buffer = { trope = Trope.create ();
+                 remote = 0; local = 0; revisions = []; rev_tail = [] };
+  in
   let handler = M (Sink (function
     | Feed (C (S "sink", M (Sink sink))) ->
       (*Printf.eprintf "GOT SINK!\n";*)
       replace_sink commands (Some sink)
-    | Feed (C (S "click", I point)) ->
+    | Feed (C (S "click", C (C (I local, I remote), I point))) ->
       (*Printf.eprintf "GOT CLICK %d!\n" point;*)
-      begin match Trope.find_before !buffer point with
-        | None ->
-          (*Printf.eprintf "NO CURSOR AT %d :(!\n" point;*)
-          ()
-        | Some cursor ->
-          match get_action cursor with
+      update_revisions buffer (local, remote);
+      begin match commute_remote_op buffer commute_point point with
+        | exception Not_found -> ()
+        | point ->
+          match Trope.find_before buffer.trope point with
           | None ->
-            (*Printf.eprintf "NO ACTION AT %d :(!\n" point;*)
+            (*Printf.eprintf "NO CURSOR AT %d :(!\n" point;*)
             ()
-          | Some action ->
-            action (Lazy.force (Trope.content cursor))
-      end;
+          | Some cursor ->
+            match get_action cursor with
+            | None ->
+              (*Printf.eprintf "NO ACTION AT %d :(!\n" point;*)
+              ()
+            | Some action ->
+              action (Lazy.force (Trope.content cursor))
+      end
+    | Feed (C (S "substitute",
+               C (C (I local, I remote),
+                  C (C (I start, I length),
+                     C (T replacement, C (S "nil", S "nil")))))) ->
+      update_revisions buffer (local, remote);
+      if length <> 0 then
+        apply_remote_op buffer (R (start, length));
+      if replacement <> "" then
+        apply_remote_op buffer (I (start, String.length replacement))
     | Feed r -> cancel r
     | Quit (S "close") ->
       replace_sink commands None;
@@ -167,9 +281,10 @@ let create_buffer () =
     ))
   in
   let rec cursor = lazy begin
-    let buf, beginning = Trope.put_cursor !buffer ~at:0 cursor in
-    let buf, position  = Trope.put_after buf beginning cursor in
-    buffer := buf;
+    let trope = buffer.trope in
+    let trope, beginning = Trope.put_cursor trope ~at:0 cursor in
+    let trope, position  = Trope.put_after  trope beginning cursor in
+    buffer.trope <- trope;
     {buffer; beginning; position; commands; action = None}
   end
   in
