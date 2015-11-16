@@ -256,7 +256,7 @@
 ;; cursor = [0:buffer 1:sink 2:marker 3:remote-revision 4:changes]
 (defun sturgeon--change-cursor (cursor beg end len)
   (let ((point (marker-position (elt cursor 2))))
-    (unless (< end point)
+    (unless (<= end point)
       ;; Adjust coordinates
       (setq beg (- beg point))
       (when (< beg 0)
