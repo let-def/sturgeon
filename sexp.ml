@@ -58,14 +58,47 @@ let sexp_of_list ?(tail=sym_nil) l =
   in
   aux l
 
+let rec sexp_mem x = function
+  | C (x', xs) when x = x' -> true
+  | C (_, xs) -> sexp_mem x xs
+  | _ -> false
+
+let escaped s =
+  let count = ref 0 in
+  let len = String.length s in
+  for i = 0 to len - 1 do
+    let c = s.[i] in
+    if c < ' ' || c > '\x7F' then
+      incr count
+  done;
+  if !count = 0 then s
+  else
+    let s' = Bytes.create (len + !count * 3) in
+    let j = ref 0 in
+    for i = 0 to len - 1 do
+      let c = s.[i] in
+      if c < ' ' || c > '\x7F' then begin
+        let c = Char.code c in
+        Bytes.set s' (!j + 0) '\\';
+        Bytes.set s' (!j + 1) Char.(unsafe_chr (code '0' + (c / 64) land 0x7));
+        Bytes.set s' (!j + 2) Char.(unsafe_chr (code '0' + ( c / 8) land 0x7));
+        Bytes.set s' (!j + 3) Char.(unsafe_chr (code '0' + (     c) land 0x7));
+        j := !j + 4
+      end else begin
+        Bytes.set s' !j c;
+        incr j
+      end
+    done;
+    s'
+
 let rec tell_sexp (tell : _ -> unit) sexp =
   match sexp with
   | C (a,b) ->
     tell "(";
     tell_sexp tell a;
     tell_cons tell b
-  | T s -> tell ("\"" ^ String.escaped s ^ "\"")
-  | S s -> tell (String.escaped s)
+  | T s -> tell ("\"" ^ escaped s ^ "\"")
+  | S s -> tell (escaped s)
   | I i -> tell (string_of_int i)
   | F f -> tell (string_of_float f)
   | P s -> tell "#"; tell_sexp tell s

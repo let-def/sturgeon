@@ -42,6 +42,9 @@ val sym_t : 'a sexp
 *)
 val sexp_of_list : ?tail:'a sexp -> 'a sexp list -> 'a sexp
 
+(** Does an element belong to a sexp list? *)
+val sexp_mem : 'a sexp -> 'a sexp -> bool
+
 (** {1 Monomorphic Emacs S-exp format} *)
 
 type void

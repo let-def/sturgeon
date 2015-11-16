@@ -7,7 +7,7 @@ type command = {
   start: int;
   length: int;
   replacement: string;
-  utf8: bool;
+  raw: bool;
   action: bool;
 }
 
@@ -17,16 +17,17 @@ type command_stream = {
   mutable queue: command list;
 }
 
+let cons_if cond x xs = if cond then x :: xs else xs
+
 let send_command sink
-    {start; length; remote_revision; local_revision; replacement; utf8; action} =
-  let cmd = sexp_of_list [
-      S "substitute";
-      C (I remote_revision, I local_revision);
-      C (I start, I length);
-      T replacement;
-      (if utf8 then sym_t else sym_nil);
-      (if action then sym_t else sym_nil);
-    ]
+    {start; length; remote_revision; local_revision; replacement; raw; action} =
+  let cmd = sexp_of_list (
+      S "substitute" ::
+      C (I remote_revision, I local_revision) ::
+      C (I start, I length) ::
+      T replacement ::
+      cons_if raw (S "raw") (cons_if action (S "action") [])
+    )
   in
   sink (Feed cmd)
 
@@ -119,8 +120,9 @@ let sub ?action current =
     end in
     Lazy.force cursor
 
-let string_length ?(utf8=false) str =
-  if utf8 then
+let string_length ?(raw=false) str =
+  if raw then String.length str
+  else
     let count = ref 0 in
     for i = 0 to String.length str - 1 do
       let c = Char.code str.[i] in
@@ -128,9 +130,8 @@ let string_length ?(utf8=false) str =
         incr count
     done;
     !count
-  else String.length str
 
-let text {buffer; commands; beginning; position} ?(utf8=false) ?properties text =
+let text {buffer; commands; beginning; position} ?(raw=false) ?properties text =
   (*let cmd = match properties with
     | None -> [S "text"; T text]
     | Some props ->
@@ -139,15 +140,16 @@ let text {buffer; commands; beginning; position} ?(utf8=false) ?properties text 
   in*)
   if Trope.member buffer.trope position then begin
     let start = Trope.position buffer.trope position in
+    let length = string_length ~raw text in
     buffer.local <- buffer.local + 1;
-    buffer.revisions <- (buffer.local, I (start, String.length text))
+    buffer.revisions <- (buffer.local, I (start, length))
                        :: buffer.revisions;
     push_command commands
-      { start; length = 0; utf8; replacement = text;
+      { start; length = 0; raw; replacement = text;
         remote_revision = buffer.remote;
         local_revision = buffer.local;
         action = (get_action beginning <> None) };
-    buffer.trope <- Trope.insert_before buffer.trope position (String.length text)
+    buffer.trope <- Trope.insert_before buffer.trope position length
   end
 
 let clear {buffer; commands; beginning; position} =
@@ -157,7 +159,7 @@ let clear {buffer; commands; beginning; position} =
     buffer.local <- buffer.local + 1;
     buffer.revisions <- (buffer.local, R (start, length)) :: buffer.revisions;
     push_command commands
-      { start; length; utf8 = false;
+      { start; length; raw = true;
         remote_revision = buffer.remote;
         local_revision = buffer.local;
         replacement = ""; action = false };
@@ -237,12 +239,12 @@ let apply_remote_op buffer op =
   | R _, (at, len) -> buffer.trope <- Trope.remove buffer.trope ~at ~len
   | I _, (at, len) -> buffer.trope <- Trope.insert buffer.trope ~at ~len
 
-let link cursor ?utf8 ?properties msg action =
+let link cursor ?raw ?properties msg action =
   let cursor = sub ~action:(Some action) cursor in
-  text cursor ?utf8 ?properties msg
+  text cursor ?raw ?properties msg
 
-let printf (cursor : cursor) ?utf8 ?properties fmt =
-  Printf.ksprintf (text cursor ?utf8 ?properties) fmt
+let printf (cursor : cursor) ?raw ?properties fmt =
+  Printf.ksprintf (text cursor ?raw ?properties) fmt
 
 let create_buffer () =
   let commands = {
@@ -278,13 +280,13 @@ let create_buffer () =
     | Feed (C (S "substitute",
                C (C (I local, I remote),
                   C (C (I start, I length),
-                     C (T replacement, C (utf8, C (S "nil", S "nil"))))))) ->
+                     C (T replacement, flags))))) ->
       update_revisions buffer (local, remote);
       if length <> 0 then
         apply_remote_op buffer (R (start, length));
-      let utf8 = utf8 <> sym_nil in
+      let raw = sexp_mem (S "raw") flags in
       if replacement <> "" then
-        apply_remote_op buffer (I (start, string_length ~utf8 replacement))
+        apply_remote_op buffer (I (start, string_length ~raw replacement))
     | Feed r -> cancel r
     | Quit (S "close") ->
       replace_sink commands None;

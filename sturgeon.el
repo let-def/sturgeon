@@ -273,10 +273,9 @@
                 (cons (vector sturgeon--revision 'insert beg (- end beg)) revisions)))
         (aset cursor 4 revisions))
       ;; Commit changes
-      (let* ((text
-               (encode-coding-string
-                (buffer-substring-no-properties (+ point beg) (+ point end))
-                 'utf-8))
+      (let* ((text (encode-coding-string
+                    (buffer-substring-no-properties (+ point beg) (+ point end))
+                    'utf-8 t))
              (action (list 'substitute
                       (cons (elt cursor 3) sturgeon--revision)
                       (cons beg len)
@@ -364,16 +363,17 @@
          ((eq (car value) 'substitute)
           (let* ((buffer    (elt cursor 0))
                  (marker    (elt cursor 2))
-                 (revisions (elt value 1))
-                 (positions (elt value 2))
-                 (text      (elt value 3))
-                 (utf8      (elt value 4))
-                 (action    (elt value 5))
+                 (revisions (cadr   value))
+                 (positions (caddr  value))
+                 (text      (cadddr value))
+                 (flags     (cddddr value))
                  (start     (+ (marker-position marker) (car positions)))
                  (length    (cdr positions))
                  (inhibit-read-only t)
                  (sturgeon--active-cursor cursor))
             (sturgeon--update-revisions cursor revisions)
+            (unless (member 'raw flags)
+              (setq text (decode-coding-string text 'utf-8 t)))
             (with-current-buffer buffer
               (save-excursion
                 (set-marker-insertion-type marker nil)
@@ -387,11 +387,12 @@
                    (when (> (cdr pos) 0)
                      ;;(setq text (propertize text 'read-only t))
                      (goto-char (car pos))
-                     (if (not action) (insert text)
-                       (insert-text-button
-                        text
-                        'action 'sturgeon-ui--cursor-action
-                        'sturgeon-cursor cursor)))))
+                     (if (member 'action flags)
+                         (insert-text-button
+                          text
+                          'action 'sturgeon-ui--cursor-action
+                          'sturgeon-cursor cursor)
+                        (insert text)))))
                 (set-marker-insertion-type marker t)))))
          (t (sturgeon-cancel value)))))))
 

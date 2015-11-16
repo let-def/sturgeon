@@ -12,7 +12,7 @@ let () =
 let () =
   Recipes.text_command @@ fun ~args ~set_title k ->
   set_title "nav-server";
-  Ui_nav.make k "Epimenide" @@ fun nav ~title ~body ->
+  Ui_nav.make k "Épiménide" @@ fun nav ~title ~body ->
   text body "Je mens.\n\n";
   link body "- C'est vrai.\n"
     (fun _ -> Ui_nav.modal nav "C'est vrai !" @@
