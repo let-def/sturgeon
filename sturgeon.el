@@ -273,11 +273,14 @@
                 (cons (vector sturgeon--revision 'insert beg (- end beg)) revisions)))
         (aset cursor 4 revisions))
       ;; Commit changes
-      (let ((action (list 'substitute
+      (let* ((text
+               (encode-coding-string
+                (buffer-substring-no-properties (+ point beg) (+ point end))
+                 'utf-8))
+             (action (list 'substitute
                       (cons (elt cursor 3) sturgeon--revision)
                       (cons beg len)
-                      (buffer-substring-no-properties (+ point beg) (+ point end))
-                      nil)))
+                      text t nil)))
         (message "patch %S" action)
         (app-sink (elt cursor 1) action)))))
 
@@ -364,7 +367,8 @@
                  (revisions (elt value 1))
                  (positions (elt value 2))
                  (text      (elt value 3))
-                 (action    (elt value 4))
+                 (utf8      (elt value 4))
+                 (action    (elt value 5))
                  (start     (+ (marker-position marker) (car positions)))
                  (length    (cdr positions))
                  (inhibit-read-only t)

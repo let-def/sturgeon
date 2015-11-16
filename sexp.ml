@@ -157,11 +157,20 @@ let read_sexp getch =
     let rec aux = function
       | '\000' -> failwith "Unterminated string"
       | '\\' ->
-        Buffer.add_char buf '\\';
-        Buffer.add_char buf (getch ());
+        begin match getch () with
+          | 't' -> Buffer.add_char buf '\t'
+          | 'r' -> Buffer.add_char buf '\r'
+          | 'n' -> Buffer.add_char buf '\n'
+          | '0'..'9' as c0 ->
+            let c0 = Char.code c0 - Char.code '0' in
+            let c1 = Char.code (getch ()) - Char.code '0' in
+            let c2 = Char.code (getch ()) - Char.code '0' in
+            Buffer.add_char buf (Char.chr (c0 * 64 + c1 * 8 + c2))
+          | c -> Buffer.add_char buf c
+        end;
         aux (getch ())
       | '"' ->
-        T (Scanf.unescaped (Buffer.contents buf)), '\000'
+        T (Buffer.contents buf), '\000'
       | c ->
         Buffer.add_char buf c;
         aux (getch ())
