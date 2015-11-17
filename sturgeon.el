@@ -372,8 +372,6 @@
                  (inhibit-read-only t)
                  (sturgeon--active-cursor cursor))
             (sturgeon--update-revisions cursor revisions)
-            (unless (member 'raw flags)
-              (setq text (decode-coding-string text 'utf-8 t)))
             (with-current-buffer buffer
               (save-excursion
                 (set-marker-insertion-type marker nil)
@@ -385,7 +383,10 @@
                 (when (and text (> (length text) 0))
                   (let ((pos (sturgeon--commute-op cursor 'insert start (length text))))
                    (when (> (cdr pos) 0)
-                     ;;(setq text (propertize text 'read-only t))
+                     (unless (member 'raw flags)
+                       (setq text (decode-coding-string text 'utf-8 t)))
+                     (unless (member 'editable flags)
+                       (setq text (propertize text 'read-only t)))
                      (goto-char (car pos))
                      (if (member 'action flags)
                          (insert-text-button
