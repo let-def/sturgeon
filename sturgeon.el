@@ -24,14 +24,66 @@
 
 ;; Routines for working with negations
 
-(defmacro lambda-once (args &rest body)
-  `(cons 'once (lambda ,args ,@body)))
+(defun sturgeon--lambda-extract-handlers (body)
+  (let ((handlers nil) (iter body))
+    (while (symbolp (car iter))
+      (setq handlers (cons
+                      (cons `(eq sturgeon-kind ,(car iter)) (cadr iter))
+                      handlers))
+      (setq iter (cddr iter)))
+    (cons handlers iter)))
 
-(defmacro lambda-sink (args &rest body)
-  `(cons 'sink (lambda ,args ,@body)))
+(defmacro lambda-once (var &rest body)
+  (let ((handlers (sturgeon--lambda-extract-handlers body)))
+    (setq body (cdr handlers))
+    (setq handlers (car handlers))
+    `(cons 'once (lambda (sturgeon-kind ,var)
+                   (cond
+                     ,@handlers
+                     ((eq sturgeon-kind 'feed)
+                      ,@body)
+                     (t
+                      (unless (eq sturgeon-kind 'quit)
+                        (message "sturgeon: unhandled message %S %S" sturgeon-kind ,var))
+                      (sturgeon-cancel ,var)))))))
+
+(defmacro lambda-sink (var &rest body)
+  (let ((handlers (sturgeon--lambda-extract-handlers body)))
+    (setq body (cdr handlers))
+    (setq handlers (car handlers))
+  `(cons 'sink (lambda (sturgeon-kind sturgeon-values)
+                 (cond
+                   ,@handlers
+                   ((member sturgeon-kind '(feed batch))
+                    (when (eq sturgeon-kind 'feed)
+                      (setq sturgeon-values (list sturgeon-values)))
+                    (dolist (,var sturgeon-values)
+                      (with-demoted-errors "sturgeon: sink application %S"
+                       ,@body)))
+                   (t
+                    (unless (eq sturgeon-kind 'quit)
+                      (message "sturgeon: unhandled message %S %S" sturgeon-kind sturgeon-values))
+                    (sturgeon-cancel sturgeon-values)))))))
+
+(defmacro lambda-batch (var &rest body)
+  (let ((handlers (sturgeon--lambda-extract-handlers body)))
+    (setq body (cdr handlers))
+    (setq handlers (car handlers))
+  `(cons 'sink (lambda (sturgeon-kind ,var)
+                 (cond
+                   ,@handlers
+                   ((member sturgeon-kind '(feed batch))
+                    (when (eq sturgeon-kind 'feed)
+                      (setq ,var (list ,var)))
+                    ,@body)
+                   (t
+                    (unless (eq sturgeon-kind 'quit)
+                      (message "sturgeon: unhandled message %S %S" sturgeon-kind sturgeon-values))
+                    (sturgeon-cancel sturgeon-values)))))))
 
 (put 'lambda-once 'lisp-indent-function 'defun)
 (put 'lambda-sink 'lisp-indent-function 'defun)
+(put 'lambda-batch 'lisp-indent-function 'defun)
 
 (defun sturgeon--app-p (sexp)
   (and (consp sexp)
@@ -43,14 +95,19 @@
   (assert (eq (car f) 'once))
   (funcall (cdr f) 'feed arg))
 
+(defun app-any (f arg)
+  (assert (sturgeon--app-p f))
+  (funcall (cdr f) 'feed arg))
+
 (defun app-sink (f arg)
   (assert (sturgeon--app-p f))
   (assert (eq (car f) 'sink))
   (funcall (cdr f) 'feed arg))
 
-(defun app-any (f arg)
+(defun app-batch (f arg)
   (assert (sturgeon--app-p f))
-  (funcall (cdr f) 'feed arg))
+  (assert (eq (car f) 'sink))
+  (funcall (cdr f) 'batch arg))
 
 (defun app-quit (f &optional arg)
   (assert (sturgeon--app-p f))
@@ -355,47 +412,44 @@
     (make-local-variable 'after-change-functions)
     (add-hook 'after-change-functions 'sturgeon--change-hook)
 
-    (lambda-sink (kind value)
-      ;; (when (eq kind 'quit) ...)
-      (when (eq kind 'feed)
-        (cond
-         ;; Clear sub regions
-         ((eq (car value) 'substitute)
-          (let* ((buffer    (elt cursor 0))
-                 (marker    (elt cursor 2))
-                 (revisions (cadr   value))
-                 (positions (caddr  value))
-                 (text      (cadddr value))
-                 (flags     (cddddr value))
-                 (start     (+ (marker-position marker) (car positions)))
-                 (length    (cdr positions))
-                 (inhibit-read-only t)
-                 (sturgeon--active-cursor cursor))
-            (sturgeon--update-revisions cursor revisions)
-            (with-current-buffer buffer
-              (save-excursion
-                (set-marker-insertion-type marker nil)
-                (when (> length 0)
-                  (let ((pos (sturgeon--commute-op cursor 'remove start length)))
-                   (when (> (cdr pos) 0)
-                     (goto-char (car pos))
-                     (delete-char (cdr pos) nil))))
-                (when (and text (> (length text) 0))
-                  (let ((pos (sturgeon--commute-op cursor 'insert start (length text))))
-                   (when (> (cdr pos) 0)
-                     (unless (member 'raw flags)
-                       (setq text (decode-coding-string text 'utf-8 t)))
-                     (unless (member 'editable flags)
-                       (setq text (propertize text 'read-only t)))
-                     (goto-char (car pos))
-                     (if (member 'action flags)
-                         (insert-text-button
-                          text
-                          'action 'sturgeon-ui--cursor-action
-                          'sturgeon-cursor cursor)
-                        (insert text)))))
-                (set-marker-insertion-type marker t)))))
-         (t (sturgeon-cancel value)))))))
+    (lambda-sink value
+      (cond
+       ;; Clear sub regions
+       ((eq (car value) 'substitute)
+        (let* ((buffer    (elt cursor 0))
+               (marker    (elt cursor 2))
+               (revisions (cadr   value))
+               (positions (caddr  value))
+               (text      (cadddr value))
+               (flags     (cddddr value))
+               (start     (+ (marker-position marker) (car positions)))
+               (length    (cdr positions))
+               (inhibit-read-only t)
+               (sturgeon--active-cursor cursor))
+          (sturgeon--update-revisions cursor revisions)
+          (with-current-buffer buffer
+            (save-excursion
+              (set-marker-insertion-type marker nil)
+              (when (> length 0)
+                (let ((pos (sturgeon--commute-op cursor 'remove start length)))
+                 (when (> (cdr pos) 0)
+                   (goto-char (car pos))
+                   (delete-char (cdr pos) nil))))
+              (when (and text (> (length text) 0))
+                (let ((pos (sturgeon--commute-op cursor 'insert start (length text))))
+                 (when (> (cdr pos) 0)
+                   (unless (member 'raw flags)
+                     (setq text (decode-coding-string text 'utf-8 t)))
+                   (unless (member 'editable flags)
+                     (setq text (propertize text 'read-only t)))
+                   (goto-char (car pos))
+                   (if (member 'action flags)
+                       (insert-text-button
+                        text
+                        'action 'sturgeon-ui--cursor-action
+                        'sturgeon-cursor cursor)
+                      (insert text)))))
+              (set-marker-insertion-type marker t)))))))))
 
 (defun sturgeon-ui-handler (value)
   (let ((cmd (car-safe value)))
@@ -409,29 +463,19 @@
 
 (defun sturgeon-ui-greetings (buffer &rest args)
   (lexical-let ((buffer buffer) (marker (point-marker)))
-    (cons
-     'ui-text
-     (cons
-      (lambda-sink (kind value)
-        (if (not (eq kind 'feed))
-            (progn
-              (sturgeon-cancel value)
-              ;; (with-current-buffer buffer
-              ;;   (save-excursion
-              ;;     (goto-char marker)
-              ;;     (insert "Connection closed.\n")))
-              )
-          (cond
-           ((eq (car-safe value) 'accept)
-            (switch-to-buffer buffer)
-            (let ((point (marker-position marker))
-                  (sink (cdr value)))
-              (app-any sink
-                       (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
-           ((eq (car-safe value) 'title)
-            (with-current-buffer buffer (rename-buffer (cdr value))))
-           (t (sturgeon-cancel value)))))
-      args))))
+    `(ui-text
+      ,(lambda-sink value
+        (cond
+         ((eq (car-safe value) 'accept)
+          (switch-to-buffer buffer)
+          (let ((point (marker-position marker))
+                (sink (cdr value)))
+            (app-any sink
+                     (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
+         ((eq (car-safe value) 'title)
+          (with-current-buffer buffer (rename-buffer (cdr value))))
+         (t (sturgeon-cancel value))))
+      ,@args)))
 
 (defun sturgeon-launch (filename)
   (interactive "fProgram path: ")
