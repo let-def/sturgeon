@@ -310,7 +310,7 @@
 (defvar-local sturgeon--revision 0)
 (defconst sturgeon--active-cursor nil)
 
-;; cursor = [0:buffer 1:sink 2:marker 3:remote-revision 4:changes]
+;; cursor = [0:buffer 1:sink 2:marker 3:remote-revision 4:changes 5:latest-remote]
 (defun sturgeon--change-cursor (cursor beg end len)
   (let ((point (marker-position (elt cursor 2))))
     (unless (<= end point)
@@ -336,8 +336,8 @@
              (action (list 'substitute
                       (cons (elt cursor 3) sturgeon--revision)
                       (cons beg len)
-                      text t nil)))
-        (message "patch %S" action)
+                      text)))
+        (aset cursor 5 sturgeon--revision)
         (app-sink (elt cursor 1) action)))))
 
 (defun sturgeon--change-hook (beg end len)
@@ -349,7 +349,12 @@
 (defun sturgeon--update-revisions (cursor revisions)
   (aset cursor 3 (cdr revisions))
   (let ((pred (lambda (change) (<= (elt change 0) (car revisions)))))
-    (aset cursor 4 (delete-if pred (elt cursor 4)))))
+    (aset cursor 4 (delete-if pred (elt cursor 4))))
+  (when (< (+ 16 (elt cursor 5)) (cdr revisions))
+    (aset cursor 5 (cdr revisions))
+    (app-sink
+     (elt cursor 1)
+     `(substitute ,(cons (cdr revisions) sturgeon--revision) (0 . 0) ""))))
 
 (defun sturgeon--remap (s l x)
   (if (< x s) x
@@ -405,7 +410,8 @@
                           sink
                           (make-marker)
                           0
-                          nil)))
+                          nil
+                          0)))
     (set-marker (elt cursor 2) point buffer)
     (set-marker-insertion-type (elt cursor 2) t)
     (setq sturgeon--cursors (cons cursor sturgeon--cursors))

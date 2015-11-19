@@ -4,6 +4,7 @@ all: byte-code-library native-code-library
 SOURCES =                    \
   sexp.mli      sexp.ml      \
   session.mli   session.ml   \
+  ui_buf.mli    ui_buf.ml    \
   ui_print.mli  ui_print.ml  \
   ui_nav.mli    ui_nav.ml    \
   ui_tree.mli   ui_tree.ml   \
