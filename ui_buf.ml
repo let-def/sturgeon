@@ -81,20 +81,23 @@ type op =
   | R of int * int
   | I of int * int
 
-type 'a change =
-  start:int -> old_len:int ->
-  text_raw:bool -> text_len:int -> text:string -> clickable:bool -> 'a
-
 type t = {
   commands: command_stream;
-  mutable on_changes: [`Keep | `Drop] change list;
-  mutable on_actions: (int -> [`Keep | `Drop]) list;
+  mutable editors: editor list;
   mutable remote: int;
   mutable latest_remote: int;
 
   mutable local: int;
   mutable revisions: (int * op) list;
   mutable rev_tail: (int * op) list;
+}
+
+and editor = {
+  buffer: t;
+  on_change: (start:int -> old_len:int ->
+              text_raw:bool -> text_len:int -> text:string ->
+              clickable:bool -> unit);
+  on_click: (int -> unit);
 }
 
 let revision_of_buffer { remote; local } =
@@ -174,20 +177,13 @@ let commute_remote_op buffer op_kind op_arg =
   let op_arg = List.fold_right op_kind buffer.revisions op_arg in
   op_arg
 
-let rec update_list f = function
-  | [] -> ()
-  | x :: xs ->
-    ignore (f x);
-    update_list f xs
-
 let create () =
   let commands = {
     sink   = None;
     closed = false;
     queue  = [];
   } in
-  let buffer = { commands;
-                 on_changes = []; on_actions = [];
+  let buffer = { commands; editors = [];
                  remote = 0; latest_remote = 0; local = 0;
                  revisions = []; rev_tail = [] };
   in
@@ -200,7 +196,7 @@ let create () =
       begin match commute_remote_op buffer commute_point point with
         | exception Not_found -> ()
         | point ->
-          update_list (fun x -> x point) buffer.on_actions;
+          List.iter (fun editor -> editor.on_click point) buffer.editors;
       end
     | Feed (C (S "substitute",
                C (C (I local, I remote),
@@ -218,12 +214,13 @@ let create () =
           let raw = sexp_mem (S "raw") flags in
           let clickable = sexp_mem (S "action") flags in
           let new_len = string_length ~raw replacement in
-          let action f =
-            f ~start ~old_len:length
+          let change editor =
+            editor.on_change
+              ~start ~old_len:length
               ~text_raw:raw ~text_len:new_len ~text:replacement
               ~clickable
           in
-          update_list action buffer.on_changes;
+          List.iter change buffer.editors;
       end
     | Feed r ->
       cancel r
@@ -236,22 +233,35 @@ let create () =
   in
   handler, buffer
 
-let remote_changes t f =
-  t.on_changes <- f :: t.on_changes
+let cancel editor =
+  editor.buffer.editors <-
+    List.filter ((!=) editor) editor.buffer.editors
 
-let remote_clicks t f =
-  t.on_actions <- f :: t.on_actions
+let edit buffer ~on_change ~on_click =
+  let editor = { buffer; on_change; on_click } in
+  buffer.editors <- editor :: buffer.editors;
+  editor
 
-let local_change t ~start ~old_len ~text_raw ~text ~clickable =
+let change editor ~start ~old_len ~text_raw ~text ~clickable =
+  let t = editor.buffer in
   t.local <- t.local + 1;
-  let new_len = string_length ~raw:text_raw text in
+  let text_len = string_length ~raw:text_raw text in
   if old_len <> 0 then
     t.revisions <- (t.local, R (start, old_len)) :: t.revisions;
-  if new_len <> 0 then
-    t.revisions <- (t.local, I (start, new_len)) :: t.revisions;
+  if text_len <> 0 then
+    t.revisions <- (t.local, I (start, text_len)) :: t.revisions;
   push_command t
      (Substitute { start; length = old_len; raw = text_raw; replacement = text;
-                  action = clickable })
+                   action = clickable });
+  List.iter (fun editor' ->
+      if editor != editor' then
+        editor'.on_change ~start ~old_len ~text_raw ~text_len ~text ~clickable
+    ) t.editors
 
-let local_click t offset =
-  push_command t (Click offset)
+let click editor offset =
+  let t = editor.buffer in
+  push_command t (Click offset);
+  List.iter (fun editor' ->
+      if editor != editor' then
+        editor'.on_click offset
+    ) t.editors

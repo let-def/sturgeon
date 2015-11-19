@@ -14,9 +14,11 @@ let () =
   set_title "nav-server";
   Ui_nav.make k "Épiménide" @@ fun nav ~title ~body ->
   text body "Je mens.\n\n";
-  link body "- C'est vrai.\n"
+  link body "- C'est vrai."
     (fun _ -> Ui_nav.modal nav "C'est vrai !" @@
       fun nav ~title ~body -> text body "C'est faux.");
-  link body "- C'est faux.\n"
+  text body "\n";
+  link body "- C'est faux."
     (fun _ -> Ui_nav.modal nav "C'est faux !" @@
-      fun nav ~title ~body -> text body "C'est vrai.")
+      fun nav ~title ~body -> text body "C'est vrai.");
+  text body "\n"
