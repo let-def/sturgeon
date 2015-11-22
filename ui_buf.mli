@@ -2,21 +2,31 @@ open Sexp
 
 val string_length : ?raw:bool -> string -> int
 
-type t
+type buffer
 
-val create : unit -> Session.t * t
+val null : buffer
 
-type editor
-val cancel : editor -> unit
+type text = {
+  position  : int;
+  old_len   : int;
+  new_len   : int;
+  text      : string;
+  text_raw  : bool;
+  clickable : bool;
+}
 
-val edit : t ->
-  on_change:(editor -> start:int -> old_len:int ->
-             text_raw:bool -> text_len:int -> text:string ->
-             clickable:bool -> unit) ->
-  on_click:(editor -> int -> unit) ->
-  editor
+val change : buffer -> ?raw:bool -> ?clickable:bool -> int -> int -> string -> unit
 
-val change : editor ->
-  start:int -> old_len:int -> text_raw:bool -> text:string -> clickable:bool -> unit
+val click : buffer -> int -> unit
 
-val click : editor -> int -> unit
+module Class : sig
+  type 'a t = {
+    connect: 'a -> buffer -> unit;
+    connected: 'a -> unit;
+    change: 'a -> text -> unit;
+    click: 'a -> int -> unit;
+  }
+  val make : 'a t -> 'a -> buffer
+end
+
+val session : unit -> Session.t * buffer
