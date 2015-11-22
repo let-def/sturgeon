@@ -67,27 +67,37 @@ let escaped s =
   let count = ref 0 in
   let len = String.length s in
   for i = 0 to len - 1 do
-    let c = s.[i] in
-    if c < ' ' || c > '\x7F' then
-      incr count
+    match s.[i] with
+    | '\n' | '"' | '\\' ->
+      count := !count + 1
+    | c when c < ' ' || c > '\x7F' ->
+      count := !count + 3
+    | _ -> ()
   done;
   if !count = 0 then s
   else
-    let s' = Bytes.create (len + !count * 3) in
+    let s' = Bytes.create (len + !count) in
     let j = ref 0 in
     for i = 0 to len - 1 do
-      let c = s.[i] in
-      if c < ' ' || c > '\x7F' then begin
+      match s.[i] with
+      | '"' | '\\' as c ->
+        Bytes.set s' (!j + 0) '\\';
+        Bytes.set s' (!j + 1) c;
+        j := !j + 2
+      | '\n' ->
+        Bytes.set s' (!j + 0) '\\';
+        Bytes.set s' (!j + 1) 'n';
+        j := !j + 2
+      | c when c < ' ' || c > '\x7F' ->
         let c = Char.code c in
         Bytes.set s' (!j + 0) '\\';
         Bytes.set s' (!j + 1) Char.(unsafe_chr (code '0' + (c / 64) land 0x7));
         Bytes.set s' (!j + 2) Char.(unsafe_chr (code '0' + ( c / 8) land 0x7));
         Bytes.set s' (!j + 3) Char.(unsafe_chr (code '0' + (     c) land 0x7));
         j := !j + 4
-      end else begin
+      | c ->
         Bytes.set s' !j c;
         incr j
-      end
     done;
     s'
 
