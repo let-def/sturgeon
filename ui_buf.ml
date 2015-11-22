@@ -94,10 +94,10 @@ type t = {
 
 and editor = {
   buffer: t;
-  on_change: (start:int -> old_len:int ->
+  on_change: (editor -> start:int -> old_len:int ->
               text_raw:bool -> text_len:int -> text:string ->
               clickable:bool -> unit);
-  on_click: (int -> unit);
+  on_click: (editor -> int -> unit);
 }
 
 let revision_of_buffer { remote; local } =
@@ -196,7 +196,7 @@ let create () =
       begin match commute_remote_op buffer commute_point point with
         | exception Not_found -> ()
         | point ->
-          List.iter (fun editor -> editor.on_click point) buffer.editors;
+          List.iter (fun editor -> editor.on_click editor point) buffer.editors;
       end
     | Feed (C (S "substitute",
                C (C (I local, I remote),
@@ -215,7 +215,7 @@ let create () =
           let clickable = sexp_mem (S "action") flags in
           let new_len = string_length ~raw replacement in
           let change editor =
-            editor.on_change
+            editor.on_change editor
               ~start ~old_len:length
               ~text_raw:raw ~text_len:new_len ~text:replacement
               ~clickable
@@ -255,7 +255,8 @@ let change editor ~start ~old_len ~text_raw ~text ~clickable =
                    action = clickable });
   List.iter (fun editor' ->
       if editor != editor' then
-        editor'.on_change ~start ~old_len ~text_raw ~text_len ~text ~clickable
+        editor'.on_change editor'
+          ~start ~old_len ~text_raw ~text_len ~text ~clickable
     ) t.editors
 
 let click editor offset =
@@ -263,5 +264,6 @@ let click editor offset =
   push_command t (Click offset);
   List.iter (fun editor' ->
       if editor != editor' then
-        editor'.on_click offset
+        editor'.on_click editor'
+          offset
     ) t.editors

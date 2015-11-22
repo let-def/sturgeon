@@ -310,35 +310,29 @@
 (defvar-local sturgeon--revision 0)
 (defconst sturgeon--active-cursor nil)
 
-;; cursor = [0:buffer 1:sink 2:marker 3:remote-revision 4:changes 5:latest-remote]
+;; cursor = [0:buffer 1:sink 2:remote-revision 3:changes 4:latest-remote]
 (defun sturgeon--change-cursor (cursor beg end len)
-  (let ((point (marker-position (elt cursor 2))))
-    (unless (<= end point)
-      ;; Adjust coordinates
-      (setq beg (- beg point))
-      (when (< beg 0)
-        (setq len (+ len beg))
-        (setq beg 0))
-      (setq end (- end point))
-      ;; Record changes
-      (let ((revisions (elt cursor 4)))
-        (unless (eq len 0)
-          (setq revisions
-                (cons (vector sturgeon--revision 'remove beg len) revisions)))
-        (unless (eq beg end)
-          (setq revisions
-                (cons (vector sturgeon--revision 'insert beg (- end beg)) revisions)))
-        (aset cursor 4 revisions))
-      ;; Commit changes
-      (let* ((text (encode-coding-string
-                    (buffer-substring-no-properties (+ point beg) (+ point end))
-                    'utf-8 t))
-             (action (list 'substitute
-                      (cons (elt cursor 3) sturgeon--revision)
-                      (cons beg len)
-                      text)))
-        (aset cursor 5 sturgeon--revision)
-        (app-sink (elt cursor 1) action)))))
+  (setq beg (1- beg))
+  (setq end (1- end))
+  ;; Record changes
+  (let ((changes (elt cursor 3)))
+    (unless (eq len 0)
+      (setq changes
+            (cons (vector sturgeon--revision 'remove beg len) changes)))
+    (unless (eq beg end)
+      (setq changes
+            (cons (vector sturgeon--revision 'insert beg (- end beg)) changes)))
+    (aset cursor 3 changes))
+  ;; Commit changes
+  (let* ((text (encode-coding-string
+                (buffer-substring-no-properties (1+ beg) (1+ end))
+                'utf-8 t))
+         (action (list 'substitute
+                  (cons (elt cursor 2) sturgeon--revision)
+                  (cons beg len)
+                  text)))
+    (aset cursor 4 sturgeon--revision)
+    (app-sink (elt cursor 1) action)))
 
 (defun sturgeon--change-hook (beg end len)
   (setq sturgeon--revision (1+ sturgeon--revision))
@@ -347,11 +341,11 @@
       (sturgeon--change-cursor cursor beg end len))))
 
 (defun sturgeon--update-revisions (cursor revisions)
-  (aset cursor 3 (cdr revisions))
+  (aset cursor 2 (cdr revisions))
   (let ((pred (lambda (change) (<= (elt change 0) (car revisions)))))
-    (aset cursor 4 (delete-if pred (elt cursor 4))))
-  (when (< (+ 16 (elt cursor 5)) (cdr revisions))
-    (aset cursor 5 (cdr revisions))
+    (aset cursor 3 (delete-if pred (elt cursor 3))))
+  (when (< (+ 16 (elt cursor 4)) (cdr revisions))
+    (aset cursor 4 (cdr revisions))
     (app-sink
      (elt cursor 1)
      `(substitute ,(cons (cdr revisions) sturgeon--revision) (0 . 0) ""))))
@@ -363,7 +357,7 @@
       s)))
 
 (defun sturgeon--commute-op (cursor k2 s2 l2)
-  (dolist (op1 (reverse (elt cursor 4)))
+  (dolist (op1 (reverse (elt cursor 3)))
     (let* ((k1 (elt op1 1))
            (s1 (elt op1 2))
            (l1 (elt op1 3)))
@@ -397,23 +391,14 @@
 
 (defun sturgeon-ui--cursor-action (x)
   (let* ((cursor (button-get x 'sturgeon-cursor))
-         (sink   (elt cursor 1))
-         (marker (elt cursor 2))
-         (offset (- (marker-position x) (marker-position marker))))
-    (app-sink sink (cons
-                    'click
-                    (cons (cons (elt cursor 3) sturgeon--revision) offset)))))
+         (sink   )
+         (offset (marker-position x)))
+    (app-sink
+      (elt cursor 1)
+      (cons 'click (cons (cons (elt cursor 2) sturgeon--revision) offset)))))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
-  (lexical-let ((cursor (vector
-                          buffer
-                          sink
-                          (make-marker)
-                          0
-                          nil
-                          0)))
-    (set-marker (elt cursor 2) point buffer)
-    (set-marker-insertion-type (elt cursor 2) t)
+  (lexical-let ((cursor (vector buffer sink 0 nil 0)))
     (setq sturgeon--cursors (cons cursor sturgeon--cursors))
     (make-local-variable 'after-change-functions)
     (add-hook 'after-change-functions 'sturgeon--change-hook)
@@ -423,19 +408,17 @@
        ;; Clear sub regions
        ((eq (car value) 'substitute)
         (let* ((buffer    (elt cursor 0))
-               (marker    (elt cursor 2))
                (revisions (cadr   value))
                (positions (caddr  value))
                (text      (cadddr value))
                (flags     (cddddr value))
-               (start     (+ (marker-position marker) (car positions)))
+               (start     (1+ (car positions)))
                (length    (cdr positions))
                (inhibit-read-only t)
                (sturgeon--active-cursor cursor))
           (sturgeon--update-revisions cursor revisions)
           (with-current-buffer buffer
             (save-excursion
-              (set-marker-insertion-type marker nil)
               (when (> length 0)
                 (let ((pos (sturgeon--commute-op cursor 'remove start length)))
                  (when (> (cdr pos) 0)
@@ -454,8 +437,7 @@
                         text
                         'action 'sturgeon-ui--cursor-action
                         'sturgeon-cursor cursor)
-                      (insert text)))))
-              (set-marker-insertion-type marker t)))))))))
+                      (insert text)))))))))))))
 
 (defun sturgeon-ui-handler (value)
   (let ((cmd (car-safe value)))

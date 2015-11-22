@@ -1,4 +1,4 @@
-EXAMPLES = nav_server print_server tree_server
+EXAMPLES = nav_server print_server tree_server sync_buffer
 
 examples: $(EXAMPLES)
 

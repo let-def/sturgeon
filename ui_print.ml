@@ -14,8 +14,8 @@ and action = cursor -> unit
 let closed =
   let _session, buffer = Ui_buf.create () in
   let editor = Ui_buf.edit buffer
-      ~on_change:(fun ~start:_ ~old_len:_ ~text_raw:_ ~text_len:_ ~text:_ ~clickable:_ -> ())
-      ~on_click:ignore
+      ~on_change:(fun _ ~start:_ ~old_len:_ ~text_raw:_ ~text_len:_ ~text:_ ~clickable:_ -> ())
+      ~on_click:(fun _ _ -> ())
   in
   let rec cursor = lazy begin
     let trope, c = Trope.put_cursor (Trope.create ()) ~at:0 cursor in
@@ -82,12 +82,12 @@ let printf (cursor : cursor) ?raw ?properties fmt =
 let create_buffer () =
   let session, buffer = Ui_buf.create () in
   let trope = ref (Trope.create ()) in
-  let on_change ~start ~old_len ~text_raw ~text_len ~text ~clickable =
+  let on_change _ ~start ~old_len ~text_raw ~text_len ~text ~clickable =
     if old_len <> 0 then
       trope := Trope.remove ~at:start ~len:old_len !trope;
     if text_len <> 0 then
       trope := Trope.insert ~at:start ~len:text_len !trope
-  and on_click offset =
+  and on_click _ offset =
     match Trope.find_before !trope offset with
     | None -> exit 4
     | Some cursor ->
