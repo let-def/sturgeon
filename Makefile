@@ -1,14 +1,12 @@
 all: byte-code-library native-code-library
 	for i in $(SUB); do $(MAKE) -C $$i $@; done
 
-SOURCES =                    \
-  sexp.mli      sexp.ml      \
-  session.mli   session.ml   \
-  ui_buf.mli    ui_buf.ml    \
-  ui_print.mli  ui_print.ml  \
-  ui_nav.mli    ui_nav.ml    \
-  ui_tree.mli   ui_tree.ml   \
-  recipes.mli   recipes.ml
+SOURCES =                \
+	sexp.mli    sexp.ml    \
+	session.mli session.ml \
+	tui.mli     tui.ml     \
+	stui.mli    stui.ml    \
+	recipes.mli recipes.ml
 
 PACKS = grenier.trope
 

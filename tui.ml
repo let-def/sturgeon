@@ -31,8 +31,8 @@ module Class = struct
   let make_cursor c i = Cursor (c, i)
 end
 
-type textbuf = Class.textbuf'
 type cursor  = Class.cursor'
+type textbuf = Class.textbuf'
 
 module Textbuf = struct
   type t = textbuf
@@ -119,6 +119,101 @@ module Cursor = struct
       sub       = (fun ?action:_ () -> closed);
       is_closed = (fun () -> true);
     }, ())
+
+  module In_textbuf = struct
+    type t = {
+      action : action option;
+      trope  : t lazy_t Trope.t ref;
+      mutable textbuf : Textbuf.t;
+      beginning : t lazy_t Trope.cursor;
+      position  : t lazy_t Trope.cursor;
+    }
+
+    let get_action c = (Lazy.force (Trope.content c)).action
+
+    let is_closed cursor = not (Trope.member !(cursor.trope) cursor.position)
+
+    let sub' ?action current =
+      if is_closed current then current
+      else
+        let action = match action with
+          | None -> get_action current.beginning
+          | Some action -> action
+        in
+        let rec cursor = lazy begin
+          let {textbuf; trope; position} = current in
+          let t, beginning = Trope.put_before !trope position  cursor in
+          let t, position  = Trope.put_after  t beginning cursor in
+          trope := t;
+          {trope; textbuf; action; beginning; position}
+        end in
+        Lazy.force cursor
+
+    let text {action; textbuf; trope; beginning; position} ?raw ?properties text =
+      (*let cmd = match properties with
+        | None -> [S "text"; T text]
+        | Some props ->
+          let props = transform_list ~inj:void ~map:(fun x -> x) props in
+          [S "text"; T text; S ":properties"; props]
+        in*)
+      if Trope.member !trope position then begin
+        let start = Trope.position !trope position in
+        let length = Textbuf.string_length ?raw text in
+        Textbuf.change textbuf start 0 ?raw ~clickable:(action <> None) text;
+        trope := Trope.insert_before !trope position length
+      end
+
+    let clear {textbuf; trope; beginning; position} =
+      if Trope.member !trope position then begin
+        let start = Trope.position !trope beginning in
+        let length = Trope.position !trope position - start in
+        Textbuf.change textbuf start length "" ~raw:true ~clickable:false;
+        trope := Trope.remove_between !trope beginning position
+      end
+
+    let rec cursor_class = {Class. text; sub; clear; is_closed}
+    and sub ?action current =
+      Class.Cursor (cursor_class, sub' ?action current)
+
+    let textbuf_class = {
+      Class.
+      connect = (fun t buffer -> t.textbuf <- buffer);
+      connected = ignore;
+      change = (fun t text ->
+          let open Ui_buf in
+          let trope = t.trope in
+          if text.old_len <> 0 then
+            trope := Trope.remove ~at:text.position ~len:text.old_len !trope;
+          if text.new_len <> 0 then
+            trope := Trope.insert ~at:text.position ~len:text.new_len !trope
+        );
+      click = (fun t offset ->
+          match Trope.find_before !(t.trope) offset with
+          | None -> exit 4
+          | Some cursor ->
+            match get_action cursor with
+            | None -> exit 5
+            | Some action ->
+              action (Class.Cursor
+                        (cursor_class, (Lazy.force (Trope.content cursor))))
+        );
+    }
+
+    let create () =
+      let trope = ref (Trope.create ()) in
+      let rec cursor = lazy begin
+        let t, beginning = Trope.put_cursor !trope ~at:0 cursor in
+        let t, position  = Trope.put_after  t beginning cursor in
+        trope := t;
+        {textbuf = Textbuf.null;
+         beginning; position; trope; action = None}
+      end in
+      let lazy cursor = cursor in
+      Class.make_cursor  cursor_class cursor,
+      Class.make_textbuf textbuf_class cursor
+  end
+
+  let in_textbuf = In_textbuf.create
 end
 
 module Nav = struct
