@@ -20,8 +20,8 @@ let command ?greetings ?cogreetings () =
 let text_command f =
   let open Sexp in
   command ~cogreetings:(function
-      | C (S "ui-text", C (session, args)) ->
-        let cursor, set_title = Ui_print.accept session in
+      | C (S "textbuf", C (session, args)) ->
+        let cursor, set_title = Stui.accept_cursor session in
         f ~args ~set_title cursor
       | sexp -> Session.cancel sexp
     )
@@ -97,8 +97,8 @@ let rec main_loop server =
 let text_server name f =
   let open Sexp in
   server ~cogreetings:(function
-      | C (S "ui-text", C (session, args)) ->
-        let cursor, set_title = Ui_print.accept session in
+      | C (S "textbuf", C (session, args)) ->
+        let cursor, set_title = Stui.accept_cursor session in
         f ~args ~set_title cursor
       | sexp -> Session.cancel sexp
     ) name

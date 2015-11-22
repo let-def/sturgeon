@@ -1,6 +1,6 @@
 open Sturgeon
 open Session
-open Ui_print
+open Tui
 
 let () =
   let fd = Unix.openfile "copycat.log"

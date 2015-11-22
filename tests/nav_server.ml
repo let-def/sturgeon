@@ -1,6 +1,6 @@
 open Sturgeon
 open Session
-open Ui_print
+open Tui
 
 let () =
   let fd = Unix.openfile "sturgeon.log"
@@ -12,13 +12,13 @@ let () =
 let () =
   Recipes.text_command @@ fun ~args ~set_title k ->
   set_title "nav-server";
-  Ui_nav.make k "Épiménide" @@ fun nav ~title ~body ->
+  Nav.make k "Épiménide" @@ fun nav body ->
   text body "Je mens.\n\n";
   link body "- C'est vrai."
-    (fun _ -> Ui_nav.modal nav "C'est vrai !" @@
-      fun nav ~title ~body -> text body "C'est faux.");
+    (fun _ -> Nav.modal nav "C'est vrai !" @@
+      fun nav body -> text body "C'est faux.");
   text body "\n";
   link body "- C'est faux."
-    (fun _ -> Ui_nav.modal nav "C'est faux !" @@
-      fun nav ~title ~body -> text body "C'est vrai.");
+    (fun _ -> Nav.modal nav "C'est faux !" @@
+      fun nav body -> text body "C'est vrai.");
   text body "\n"

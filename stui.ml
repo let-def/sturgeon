@@ -2,7 +2,7 @@ open Sexp
 open Session
 open Tui
 
-module Textbuf = struct
+module Remote_textbuf = struct
   type revision = {
     r_remote: int;
     r_local: int;
@@ -234,18 +234,18 @@ module Textbuf = struct
 end
 
 let textbuf_session () =
-  let session, t = Textbuf.create () in
-  session, Class.make_textbuf Textbuf.class_ t
+  let session, t = Remote_textbuf.create () in
+  session, Class.make_textbuf Remote_textbuf.class_ t
 
 let cursor_greetings ~name =
-  let cursor, a = Cursor.in_textbuf () in
+  let cursor, a = Textbuf.with_cursor () in
   let session, b = textbuf_session () in
   Tui.Textbuf.connect ~a ~b;
   sexp_of_list [S "create-buffer"; T name; session], cursor
 
 let accept_cursor = function
   | M (Sink t) ->
-    let cursor, a = Cursor.in_textbuf () in
+    let cursor, a = Textbuf.with_cursor () in
     let session, b = textbuf_session () in
     Tui.Textbuf.connect ~a ~b;
     t (Feed (C (S "accept", session)));

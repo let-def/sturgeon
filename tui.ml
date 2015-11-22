@@ -33,6 +33,34 @@ end
 
 type cursor  = Class.cursor'
 type textbuf = Class.textbuf'
+type action = Class.action
+
+let is_closed (Class.Cursor (c, i)) =
+  c.Class.is_closed i
+
+let text (Class.Cursor (c, i)) ?raw ?properties txt =
+  c.Class.text i ?raw ?properties txt
+
+let clear (Class.Cursor (c, i)) =
+  c.Class.clear i
+
+let sub ?action (Class.Cursor (c, i)) =
+  c.Class.sub ?action i
+
+let link cursor ?raw ?properties msg action =
+  let cursor = sub ~action:(Some action) cursor in
+  text cursor ?raw ?properties msg
+
+let printf (cursor : cursor) ?raw ?properties fmt =
+  Printf.ksprintf (text cursor ?raw ?properties) fmt
+
+let rec null_cursor = Class.Cursor ({
+    Class.
+    text      = (fun () ?raw:_ ?properties:_ _ -> ());
+    clear     = (fun () -> ());
+    sub       = (fun ?action:_ () -> null_cursor);
+    is_closed = (fun () -> true);
+  }, ())
 
 module Textbuf = struct
   type t = textbuf
@@ -87,44 +115,12 @@ module Textbuf = struct
       change    = (fun () _text -> ());
       click     = (fun () _offset -> ());
     }, ())
-end
 
-module Cursor = struct
-  type t = cursor
-  type action = Class.action
-
-  let is_closed (Class.Cursor (c, i)) =
-    c.Class.is_closed i
-
-  let text (Class.Cursor (c, i)) ?raw ?properties txt =
-    c.Class.text i ?raw ?properties txt
-
-  let clear (Class.Cursor (c, i)) =
-    c.Class.clear i
-
-  let sub ?action (Class.Cursor (c, i)) =
-    c.Class.sub ?action i
-
-  let link cursor ?raw ?properties msg action =
-    let cursor = sub ~action:(Some action) cursor in
-    text cursor ?raw ?properties msg
-
-  let printf (cursor : cursor) ?raw ?properties fmt =
-    Printf.ksprintf (text cursor ?raw ?properties) fmt
-
-  let rec closed = Class.Cursor ({
-      Class.
-      text      = (fun () ?raw:_ ?properties:_ _ -> ());
-      clear     = (fun () -> ());
-      sub       = (fun ?action:_ () -> closed);
-      is_closed = (fun () -> true);
-    }, ())
-
-  module In_textbuf = struct
+  module Cursor = struct
     type t = {
       action : action option;
       trope  : t lazy_t Trope.t ref;
-      mutable textbuf : Textbuf.t;
+      mutable textbuf : textbuf;
       beginning : t lazy_t Trope.cursor;
       position  : t lazy_t Trope.cursor;
     }
@@ -158,8 +154,8 @@ module Cursor = struct
         in*)
       if Trope.member !trope position then begin
         let start = Trope.position !trope position in
-        let length = Textbuf.string_length ?raw text in
-        Textbuf.change textbuf start 0 ?raw ~clickable:(action <> None) text;
+        let length = string_length ?raw text in
+        change textbuf start 0 ?raw ~clickable:(action <> None) text;
         trope := Trope.insert_before !trope position length
       end
 
@@ -167,7 +163,7 @@ module Cursor = struct
       if Trope.member !trope position then begin
         let start = Trope.position !trope beginning in
         let length = Trope.position !trope position - start in
-        Textbuf.change textbuf start length "" ~raw:true ~clickable:false;
+        change textbuf start length "" ~raw:true ~clickable:false;
         trope := Trope.remove_between !trope beginning position
       end
 
@@ -180,7 +176,6 @@ module Cursor = struct
       connect = (fun t buffer -> t.textbuf <- buffer);
       connected = ignore;
       change = (fun t text ->
-          let open Ui_buf in
           let trope = t.trope in
           if text.old_len <> 0 then
             trope := Trope.remove ~at:text.position ~len:text.old_len !trope;
@@ -205,19 +200,17 @@ module Cursor = struct
         let t, beginning = Trope.put_cursor !trope ~at:0 cursor in
         let t, position  = Trope.put_after  t beginning cursor in
         trope := t;
-        {textbuf = Textbuf.null;
-         beginning; position; trope; action = None}
+        {textbuf = null; beginning; position; trope; action = None}
       end in
       let lazy cursor = cursor in
       Class.make_cursor  cursor_class cursor,
       Class.make_textbuf textbuf_class cursor
   end
 
-  let in_textbuf = In_textbuf.create
+  let with_cursor = Cursor.create
 end
 
 module Nav = struct
-  open Cursor
 
   type t = {
     mutable prev: page list;
@@ -281,7 +274,6 @@ module Nav = struct
 end
 
 module Tree = struct
-  open Cursor
 
   type t = {
     indent: int;

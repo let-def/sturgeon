@@ -5,23 +5,18 @@ type textbuf
 
 (* Minimal text API *)
 
-module Cursor : sig
-  type t = cursor
-  type action = t -> unit
+type action = cursor -> unit
 
-  val text  : t -> ?raw:bool -> ?properties:basic -> string -> unit
-  val clear : t -> unit
-  val sub   : ?action:action option -> t -> t
-  val is_closed : t -> bool
+val text   : cursor -> ?raw:bool -> ?properties:basic -> string -> unit
+val clear  : cursor -> unit
+val sub    : ?action:action option -> cursor -> cursor
+val link   : cursor -> ?raw:bool -> ?properties:basic ->
+             string -> action -> unit
+val printf : cursor -> ?raw:bool -> ?properties:basic ->
+             ('a, unit, string, unit) format4 -> 'a
 
-  val link   : t -> ?raw:bool -> ?properties:basic -> string -> action -> unit
-  val printf : t -> ?raw:bool -> ?properties:basic ->
-               ('a, unit, string, unit) format4 -> 'a
-
-  val closed : t
-
-  val in_textbuf : unit -> cursor * textbuf
-end
+val null_cursor : cursor
+val is_closed   : cursor -> bool
 
 (* Basic widgets *)
 
@@ -35,7 +30,7 @@ end
 module Tree : sig
   type t
   val make : cursor -> t
-  val add : ?children:(t -> unit) -> ?action:Cursor.action option -> t -> cursor
+  val add : ?children:(t -> unit) -> ?action:action option -> t -> cursor
   val clear : t -> unit
 end
 
@@ -59,6 +54,7 @@ module Textbuf : sig
   val change : t -> ?raw:bool -> ?clickable:bool -> int -> int -> string -> unit
   val click : t -> int -> unit
   val connect : a:t -> b:t -> unit
+  val with_cursor : unit -> cursor * textbuf
 end
 
 module Class : sig
@@ -71,13 +67,15 @@ module Class : sig
 
   val make_textbuf : 'a textbuf -> 'a -> Textbuf.t
 
+  type cursor' = cursor
+
   type 'a cursor = {
     text      : 'a -> ?raw:bool -> ?properties:basic -> string -> unit;
     clear     : 'a -> unit;
-    sub       : ?action:Cursor.action option -> 'a -> Cursor.t;
+    sub       : ?action:action option -> 'a -> cursor';
     is_closed : 'a -> bool;
   }
 
-  val make_cursor : 'a cursor -> 'a -> Cursor.t
+  val make_cursor : 'a cursor -> 'a -> cursor'
 end
 
