@@ -14,6 +14,8 @@ val server:
   ?cogreetings:(Session.t -> unit) ->
   string -> server
 
+val stop_server: server -> unit
+
 val text_server:
   string ->
   (args:Session.t ->
@@ -24,4 +26,4 @@ val accept:
   server -> unit
 
 val main_loop :
-  server -> 'a
+  server -> unit

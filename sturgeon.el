@@ -451,7 +451,7 @@
 
 (defun sturgeon-ui-greetings (buffer &rest args)
   (lexical-let ((buffer buffer) (marker (point-marker)))
-    `(ui-text
+    `(textbuf
       ,(lambda-sink value
         (cond
          ((eq (car-safe value) 'accept)
