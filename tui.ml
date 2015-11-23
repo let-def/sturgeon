@@ -96,6 +96,9 @@ module Textbuf = struct
   let click (Class.Textbuf (c, i)) offset =
     c.Class.click i offset
 
+  let direct_change (Class.Textbuf (c, i)) text =
+    c.Class.change i text
+
   let change (Class.Textbuf (c, i))
       ?(raw=false) ?(clickable=false) start len text =
     let text = {

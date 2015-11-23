@@ -41,7 +41,7 @@ module Textbuf : sig
 
   val string_length : ?raw:bool -> string -> int
 
-  type text = {
+  type text = private {
     position  : int;
     old_len   : int;
     new_len   : int;
@@ -54,6 +54,8 @@ module Textbuf : sig
   val change : t -> ?raw:bool -> ?clickable:bool -> int -> int -> string -> unit
   val click : t -> int -> unit
   val connect : a:t -> b:t -> unit
+
+  val direct_change : t -> text -> unit
   val with_cursor : unit -> cursor * textbuf
 end
 
