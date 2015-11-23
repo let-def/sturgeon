@@ -243,11 +243,15 @@ let cursor_greetings ~name =
   Tui.Textbuf.connect ~a ~b;
   sexp_of_list [S "create-buffer"; T name; session], cursor
 
-let accept_cursor = function
+let accept_textbuf = function
   | M (Sink t) ->
-    let cursor, a = Textbuf.with_cursor () in
-    let session, b = textbuf_session () in
-    Tui.Textbuf.connect ~a ~b;
+    let session, textbuf = textbuf_session () in
     t (Feed (C (S "accept", session)));
-    cursor, (fun str -> t (Feed (C (S "title", T str))))
-  | _ -> invalid_arg "Ui_print.accept"
+    textbuf, (fun str -> t (Feed (C (S "title", T str))))
+  | _ -> invalid_arg "Stui.accept_textbuf"
+
+let accept_cursor session =
+  let a, set_title = accept_textbuf session in
+  let cursor, b = Textbuf.with_cursor () in
+  Tui.Textbuf.connect ~a ~b;
+  cursor, set_title

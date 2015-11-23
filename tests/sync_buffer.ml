@@ -2,13 +2,6 @@ open Sturgeon
 open Sexp
 open Session
 
-let buffer_accept = function
-  | M (Sink t) ->
-    let handler, buffer = Stui.textbuf_session () in
-    t (Feed (C (S "accept", handler)));
-    buffer, (fun str -> t (Feed (C (S "title", T str))))
-  | _ -> invalid_arg "Ui_print.accept"
-
 module Hub : sig
   type t
   val make : unit -> t
@@ -48,7 +41,7 @@ let () =
   let hub = Hub.make () in
   Recipes.server ~cogreetings:(function
       | C (S "ui-text", C (session, args)) ->
-        let a, set_title = buffer_accept session in
+        let a, set_title = Stui.accept_textbuf session in
         set_title "test";
         let b = Hub.port hub in
         Tui.Textbuf.connect ~a ~b
