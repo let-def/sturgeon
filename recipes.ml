@@ -75,15 +75,15 @@ let accept server =
 
 
 let rec main_loop server =
+  server.clients <- List.filter (Hashtbl.mem server.connections) server.clients;
   let r, _, _ = Unix.select (server.socket :: server.clients) [] [] (-1.0) in
   let rec pump fd (stdin, received, status) =
-    let sexp = match stdin () with
-      | None -> Sexp.S "end"
-      | Some sexp -> sexp
-    in
-    received sexp;
-    if Unix.select [fd] [] [] 0.0 <> ([],[],[]) then
-      pump fd (stdin, received, status)
+    match stdin () with
+      | None -> Hashtbl.remove server.connections fd
+      | Some sexp ->
+        received sexp;
+        if Unix.select [fd] [] [] 0.0 <> ([],[],[]) then
+          pump fd (stdin, received, status)
   in
   let process fd =
     if fd = server.socket then
