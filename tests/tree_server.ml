@@ -15,6 +15,7 @@ let () =
   @@ fun ~args ~set_title cursor ->
   set_title "tree-server";
 
-  Nav.make cursor "0 to 9" @@ fun nav body ->
+  Nav.make cursor "0 to 9" @@ fun nav ->
+  let body = Nav.body nav in
   text body "\n";
   children "/" (Tree.make body)

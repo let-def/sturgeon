@@ -22,9 +22,13 @@ val is_closed   : cursor -> bool
 
 module Nav : sig
   type t
-  val make  : cursor -> string -> (t -> cursor -> unit) -> unit
+  val make  : cursor -> string -> (t -> unit) -> unit
+  val modal : t -> string -> (t -> unit) -> unit
+
   val title : t -> cursor
-  val modal : t -> string -> (t -> cursor -> unit) -> unit
+  val body  : t -> cursor
+
+  val null : t
 end
 
 module Tree : sig
@@ -32,6 +36,8 @@ module Tree : sig
   val make : cursor -> t
   val add : ?children:(t -> unit) -> ?action:action option -> t -> cursor
   val clear : t -> unit
+
+  val null : t
 end
 
 (* Low-level extension *)

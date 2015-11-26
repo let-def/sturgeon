@@ -461,7 +461,7 @@
             (app-any sink
                      (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
          ((eq (car-safe value) 'title)
-          (with-current-buffer buffer (rename-buffer (cdr value))))
+          (with-current-buffer buffer (rename-buffer (cdr value) t)))
          (t (sturgeon-cancel value))))
       ,@args)))
 

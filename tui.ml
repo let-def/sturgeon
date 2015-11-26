@@ -224,14 +224,38 @@ module Nav = struct
     body: cursor;
   }
 
-  and page = string * (t -> cursor -> unit)
+  and page = string * (t -> unit)
+
+  let null_page : page = "", ignore
+
+  let not_closed t =
+    if is_closed t.body then (
+      if t.page != null_page then (
+        t.prev <- [];
+        t.next <- [];
+        t.page <- null_page;
+      );
+      false
+    ) else
+      true
+
+  let null = {
+    prev  = [];
+    page  = null_page;
+    next  = [];
+
+    title = null_cursor;
+    body  = null_cursor;
+  }
 
   let refresh t =
-    clear t.title;
-    text t.title (fst t.page);
+    if not_closed t then (
+      clear t.title;
+      text t.title (fst t.page);
 
-    clear t.body;
-    (snd t.page) t t.body
+      clear t.body;
+      (snd t.page) t
+    )
 
   let next t =
     match t.next with
@@ -252,28 +276,37 @@ module Nav = struct
       refresh t
 
   let render_header t cursor =
-    link cursor "<<" (fun _ -> prev t);
-    text cursor " ";
-    link cursor "[?]" (fun _ -> refresh t);
-    text cursor " ";
-    link cursor ">>" (fun _ -> next t)
+    if not_closed t then (
+      link cursor "<<" (fun _ -> prev t);
+      text cursor " ";
+      link cursor "[?]" (fun _ -> refresh t);
+      text cursor " ";
+      link cursor ">>" (fun _ -> next t)
+    )
 
   let make cursor label content =
-    let header = sub cursor in
-    text cursor " ";
-    let title = sub cursor in
-    text cursor "\n\n";
-    let body = sub cursor in
-    let t = { prev = []; page = (label, content); next = []; title; body } in
-    render_header t header;
-    refresh t
+    if not (is_closed cursor) then (
+      let header = sub cursor in
+      text cursor " ";
+      let title = sub cursor in
+      text cursor "\n\n";
+      let body = sub cursor in
+      let t = { prev = []; page = (label, content); next = []; title; body } in
+      render_header t header;
+      refresh t
+    )
 
   let title t =
     t.title
 
+  let body t =
+    t.body
+
   let modal t label content =
-    t.next <- [(label, content)];
-    next t
+    if not_closed t then (
+      t.next <- [(label, content)];
+      next t
+    )
 end
 
 module Tree = struct
@@ -282,6 +315,14 @@ module Tree = struct
     indent: int;
     cursor: cursor;
   }
+
+  let null = {
+    indent = 0;
+    cursor = null_cursor;
+  }
+
+  let not_closed t =
+    not (is_closed t.cursor)
 
   let make cursor =
     { indent = 0; cursor = sub cursor }
@@ -320,9 +361,12 @@ module Tree = struct
     result
 
   let add ?children ?action t =
-    match children with
-    | None -> add_leaf ?action t
-    | Some children -> add_node children ?action t
+    if not_closed t then (
+      match children with
+      | None -> add_leaf ?action t
+      | Some children -> add_node children ?action t
+    ) else
+      null_cursor
 
   let clear t = clear t.cursor
 end
