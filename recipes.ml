@@ -92,14 +92,19 @@ let rec main_loop server =
     let rec pump fd (stdin, received, status) =
       match stdin () with
       | None -> Hashtbl.remove server.connections fd
+      | exception (Sys_error _) ->
+        Hashtbl.remove server.connections fd
       | Some sexp ->
-        received sexp;
+        begin try received sexp;
+          with _ -> ()
+        end;
         if Unix.select [fd] [] [] 0.0 <> ([],[],[]) then
           pump fd (stdin, received, status)
     in
     let process fd =
       if fd = socket then
-        accept server
+        try accept server
+        with _ -> ()
       else
         pump fd (Hashtbl.find server.connections fd)
     in

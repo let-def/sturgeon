@@ -479,21 +479,16 @@
   (let ((default-directory server))
     (call-interactively 'sturgeon-launch)))
 
-(defun sturgeon-connect (filename)
-  (interactive (list
-                (let ((insert-default-directory nil))
-                  (read-file-name "Socket path: "
-                                  (concat temporary-file-directory "sturgeon."
-                                          (int-to-string (user-uid)) "/")))))
-  (let ((buffer (get-buffer-create filename)))
-    (unless (file-name-absolute-p filename)
-      (setq filename
-            (concat temporary-file-directory
-                    "sturgeon." (int-to-string (user-uid)) "/"
-                    filename)))
-    (sturgeon-start-process
-     filename buffer
-     "socat" (list "-" (concat "UNIX-CONNECT:" filename))
+(defun sturgeon-connect (name)
+  (interactive (list (completing-read
+                      "Socket: "
+                      (with-demoted-errors "Cannot execute 'sturgeon-connector' command, check your setup. (%S)"
+                       (process-lines "sturgeon-connector")))))
+  (let ((buffer (get-buffer-create name))
+        (path (or (car-safe (process-lines "sturgeon-connector" name)) name)))
+    (sturgeon-start
+     (make-network-process
+      :name name :buffer buffer :family 'local :service path)
      :greetings (sturgeon-ui-greetings buffer nil))
     (switch-to-buffer buffer)))
 

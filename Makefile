@@ -1,4 +1,4 @@
-all: byte-code-library native-code-library
+all: byte-code-library native-code-library sturgeon-connector
 	for i in $(SUB); do $(MAKE) -C $$i $@; done
 
 SOURCES =                \
@@ -35,3 +35,6 @@ uninstall: libuninstall
 reinstall:
 	-$(MAKE) uninstall
 	$(MAKE) install
+
+sturgeon-connector: sturgeon.cma sturgeon_connector.ml
+	ocamlc -o $@ unix.cma $^
