@@ -335,6 +335,9 @@
     (app-sink (elt cursor 1) action)))
 
 (defun sturgeon--change-hook (beg end len)
+  (when (and sturgeon--active-cursor
+             (eq (elt sturgeon--active-cursor 4) sturgeon--revision))
+    (aset sturgeon--active-cursor 4 (1+ sturgeon--revision)))
   (setq sturgeon--revision (1+ sturgeon--revision))
   (dolist (cursor sturgeon--cursors)
     (unless (eq cursor sturgeon--active-cursor)
