@@ -338,11 +338,10 @@ module Tree = struct
     text t.cursor "\n";
     result
 
-  let add_node children ?action t =
+  let add_node children ?action ?(opened=ref false) t =
     indent t;
     let body = ref None in
-    let opened = ref false in
-    link t.cursor "[+]" (fun c ->
+    link t.cursor (if !opened then "[-]" else "[+]") (fun c ->
         match !body with
         | None -> ()
         | Some t' when !opened ->
@@ -357,14 +356,16 @@ module Tree = struct
     text t.cursor " ";
     let result = sub ?action t.cursor in
     text t.cursor "\n";
-    body := Some { indent = t.indent + 1; cursor = sub t.cursor };
+    let t' = { indent = t.indent + 1; cursor = sub t.cursor } in
+    body := Some t';
+    if !opened then children t';
     result
 
-  let add ?children ?action t =
+  let add ?children ?action ?opened t =
     if not_closed t then (
       match children with
       | None -> add_leaf ?action t
-      | Some children -> add_node children ?action t
+      | Some children -> add_node children ?action ?opened t
     ) else
       null_cursor
 

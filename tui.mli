@@ -34,7 +34,7 @@ end
 module Tree : sig
   type t
   val make : cursor -> t
-  val add : ?children:(t -> unit) -> ?action:action option -> t -> cursor
+  val add : ?children:(t -> unit) -> ?action:action option -> ?opened:bool ref -> t -> cursor
   val clear : t -> unit
 
   val null : t
