@@ -394,11 +394,10 @@
 
 (defun sturgeon-ui--cursor-action (x)
   (let* ((cursor (button-get x 'sturgeon-cursor))
-         (sink   )
-         (offset (marker-position x)))
-    (app-sink
-      (elt cursor 1)
-      (cons 'click (cons (cons (elt cursor 2) sturgeon--revision) offset)))))
+         (sink   (elt cursor 1))
+         (rev    (cons (elt cursor 2) sturgeon--revision))
+         (offset (1- (marker-position x))))
+    (app-sink sink (cons 'click (cons rev offset)))))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
@@ -432,7 +431,7 @@
                  (when (> (cdr pos) 0)
                    (unless (member 'raw flags)
                      (setq text (decode-coding-string text 'utf-8 t)))
-                   (unless (member 'editable flags)
+                   (unless (member 'edit flags)
                      (setq text (propertize text 'read-only t)))
                    (goto-char (car pos))
                    (if (member 'action flags)
@@ -477,23 +476,34 @@
      :greetings (sturgeon-ui-greetings buffer nil))
     (switch-to-buffer buffer)))
 
-(defun sturgeon-remote-launch (server)
-  (interactive "fServer: ")
-  (let ((default-directory server))
-    (call-interactively 'sturgeon-launch)))
-
 (defun sturgeon-connect (name)
   (interactive (list (completing-read
                       "Socket: "
                       (with-demoted-errors "Cannot execute 'sturgeon-connector' command, check your setup. (%S)"
-                       (process-lines "sturgeon-connector")))))
-  (let ((buffer (get-buffer-create name))
-        (path (or (car-safe (process-lines "sturgeon-connector" name)) name)))
-    (sturgeon-start
-     (make-network-process
-      :name name :buffer buffer :family 'local :service path)
-     :greetings (sturgeon-ui-greetings buffer nil))
-    (switch-to-buffer buffer)))
+                       (process-lines "sturgeon-connector" "list")))))
+  (let ((buffer (get-buffer-create name)))
+    (if (and (boundp 'sturgeon--remote) sturgeon--remote)
+        (sturgeon-start-process
+          name buffer
+          "sturgeon-connector" (list "pipe" name)
+          :greetings (sturgeon-ui-greetings buffer nil))
+      (let ((path (or (car-safe (process-lines "sturgeon-connector" "which" name)) name)))
+         (sturgeon-start (make-network-process
+                          :name name :buffer buffer :family 'local :service path)
+                         :greetings (sturgeon-ui-greetings buffer nil))))
+      (switch-to-buffer buffer)))
+
+(defun sturgeon-remote-launch (server)
+  (interactive "fServer: ")
+  (let ((default-directory server)
+        (sturgeon--remote t))
+    (call-interactively 'sturgeon-launch)))
+
+(defun sturgeon-remote-connect (server)
+  (interactive "fServer: ")
+  (let ((default-directory server)
+        (sturgeon--remote t))
+    (call-interactively 'sturgeon-connect)))
 
 ;; Done
 

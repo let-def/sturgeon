@@ -54,14 +54,18 @@ module Textbuf : sig
     text      : string;
     text_raw  : bool;
     clickable : bool;
+    editable  : bool;
   }
 
+  val text :
+    ?raw:bool -> ?clickable:bool -> ?editable:bool ->
+    int -> int -> string -> text
+
   val null : t
-  val change : t -> ?raw:bool -> ?clickable:bool -> int -> int -> string -> unit
+  val change : t -> text -> unit
   val click : t -> int -> unit
   val connect : a:t -> b:t -> unit
 
-  val direct_change : t -> text -> unit
   val with_cursor : unit -> cursor * textbuf
 end
 
@@ -82,6 +86,7 @@ module Class : sig
     clear     : 'a -> unit;
     sub       : ?action:action option -> 'a -> cursor';
     is_closed : 'a -> bool;
+    debug     : 'a -> unit;
   }
 
   val make_cursor : 'a cursor -> 'a -> cursor'

@@ -13,7 +13,7 @@ module Remote_textbuf = struct
     length: int;
     replacement: string;
     raw: bool;
-    action: bool;
+    flags: string list;
   }
 
   type command =
@@ -32,13 +32,13 @@ module Remote_textbuf = struct
   let cons_if cond x xs = if cond then x :: xs else xs
 
   let send_command sink (rev,cmd) = match cmd with
-    | Substitute {start; length; replacement; raw; action} ->
+    | Substitute {start; length; replacement; raw; flags} ->
       let cmd = sexp_of_list (
           S "substitute" ::
           sexp_of_revision rev ::
           C (I start, I length) ::
           T replacement ::
-          cons_if raw (S "raw") (cons_if action (S "action") [])
+          cons_if raw (S "raw") (List.map (fun s -> S s) flags)
         )
       in
       sink (Feed cmd)
@@ -116,7 +116,7 @@ module Remote_textbuf = struct
     end;
     if t.latest_remote < remote - 16 then
       let subst = {start = 0; length = 0; raw = true;
-                   replacement = ""; action = false} in
+                   replacement = ""; flags = [] } in
       push_command t (Substitute subst)
 
   let commute_remove (_,op') (s2, l2) = match op' with
@@ -197,8 +197,10 @@ module Remote_textbuf = struct
             | (start, length) ->
               let raw = sexp_mem (S "raw") flags in
               let clickable = sexp_mem (S "action") flags in
+              let editable = sexp_mem (S "edit") flags in
               Textbuf.change t.textbuf
-                ~raw ~clickable start length replacement
+                (Textbuf.text ~raw ~clickable ~editable
+                   start length replacement)
           end
         | Feed r ->
           cancel r
@@ -211,17 +213,18 @@ module Remote_textbuf = struct
     in
     handler, t
 
-  let change t text =
+  let change t txt =
     let open Textbuf in
     t.local <- t.local + 1;
-    if text.old_len <> 0 then
-      t.revisions <- (t.local, R (text.position, text.old_len)) :: t.revisions;
-    if text.new_len <> 0 then
-      t.revisions <- (t.local, I (text.position, text.new_len)) :: t.revisions;
+    if txt.old_len <> 0 then
+      t.revisions <- (t.local, R (txt.position, txt.old_len)) :: t.revisions;
+    if txt.new_len <> 0 then
+      t.revisions <- (t.local, I (txt.position, txt.new_len)) :: t.revisions;
     push_command t
-      (Substitute { start = text.position; length = text.old_len;
-                    raw = text.text_raw; replacement = text.text;
-                    action = text.clickable })
+      (Substitute { start = txt.position; length = txt.old_len;
+                    raw = txt.text_raw; replacement = txt.text;
+                    flags = (cons_if txt.clickable "action" @@
+                             cons_if txt.editable "edit" []) })
 
   let click t offset =
     push_command t (Click offset)

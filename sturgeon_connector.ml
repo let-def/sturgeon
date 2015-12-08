@@ -29,7 +29,7 @@ let list () =
     List.iter print_endline
       (List.filter check (Array.to_list files))
 
-(*let write_all buf fd sz =
+let write_all buf fd sz =
   let x = ref 0 in
   while !x < sz do
     x := !x + Unix.write_substring fd buf !x (sz - !x)
@@ -63,15 +63,26 @@ let pipe name =
   with exn ->
     if debug then
       prerr_endline (path ^ ": " ^ Printexc.to_string exn);
-    exit 1*)
+    exit 1
+
+let usage () =
+  Printf.eprintf "Usage:\n%s list\n%s which <socket>\n%s open <socket>\n"
+    Sys.argv.(0) Sys.argv.(0) Sys.argv.(0);
+  exit 1
 
 let arg =
-  if Array.length Sys.argv > 1 then
-    Some Sys.argv.(1)
-  else
-    None
+  match Sys.argv with
+  | [|_; "list"|] ->
+    `List
+  | [|_; "which"; socket|] ->
+    `Which socket
+  | [|_; "pipe"; socket|] ->
+    `Pipe socket
+  | _ -> usage ()
 
 let () = match arg with
-  | None -> list ()
-  | Some name ->
+  | `List -> list ()
+  | `Which name ->
     print_endline (Filename.concat dir name)
+  | `Pipe name ->
+    pipe (Filename.concat dir name)

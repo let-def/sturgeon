@@ -8,7 +8,30 @@ type text' = {
   text      : string;
   text_raw  : bool;
   clickable : bool;
+  editable  : bool;
 }
+
+let string_length ?(raw=false) str =
+  if raw then String.length str
+  else
+    let count = ref 0 in
+    for i = 0 to String.length str - 1 do
+      let c = Char.code str.[i] in
+      if c land 0xC0 <> 0x80 then
+        incr count
+    done;
+    !count
+
+let text' ?(raw=false) ?(clickable=false) ?(editable=false) start len text =
+  {
+    position  = start;
+    old_len   = len;
+    new_len   = string_length ~raw text;
+    text      = text;
+    text_raw  = raw;
+    clickable = clickable;
+    editable  = editable;
+  }
 
 module Class = struct
   type 'a textbuf = {
@@ -25,6 +48,7 @@ module Class = struct
     clear     : 'a -> unit;
     sub       : ?action:action option -> 'a -> cursor';
     is_closed : 'a -> bool;
+    debug     : 'a -> unit;
   }
   and cursor' = Cursor : 'a cursor * 'a -> cursor'
   and action = cursor' -> unit
@@ -44,6 +68,9 @@ let text (Class.Cursor (c, i)) ?raw ?properties txt =
 let clear (Class.Cursor (c, i)) =
   c.Class.clear i
 
+let debug (Class.Cursor (c, i)) =
+  c.Class.debug i
+
 let sub ?action (Class.Cursor (c, i)) =
   c.Class.sub ?action i
 
@@ -60,6 +87,7 @@ let rec null_cursor = Class.Cursor ({
     clear     = (fun () -> ());
     sub       = (fun ?action:_ () -> null_cursor);
     is_closed = (fun () -> true);
+    debug     = (fun () -> prerr_endline "NULL");
   }, ())
 
 module Textbuf = struct
@@ -72,18 +100,11 @@ module Textbuf = struct
     text      : string;
     text_raw  : bool;
     clickable : bool;
+    editable  : bool;
   }
 
-  let string_length ?(raw=false) str =
-    if raw then String.length str
-    else
-      let count = ref 0 in
-      for i = 0 to String.length str - 1 do
-        let c = Char.code str.[i] in
-        if c land 0xC0 <> 0x80 then
-          incr count
-      done;
-      !count
+  let string_length = string_length
+  let text = text'
 
   let connect ~a ~b =
     let Class.Textbuf (ca, ia) = a in
@@ -96,19 +117,7 @@ module Textbuf = struct
   let click (Class.Textbuf (c, i)) offset =
     c.Class.click i offset
 
-  let direct_change (Class.Textbuf (c, i)) text =
-    c.Class.change i text
-
-  let change (Class.Textbuf (c, i))
-      ?(raw=false) ?(clickable=false) start len text =
-    let text = {
-      position  = start;
-      old_len   = len;
-      new_len   = string_length ~raw text;
-      text      = text;
-      text_raw  = raw;
-      clickable = clickable;
-    } in
+  let change (Class.Textbuf (c, i)) text =
     c.Class.change i text
 
   let null = Class.Textbuf ({
@@ -157,22 +166,38 @@ module Textbuf = struct
         in*)
       if Trope.member !trope position then begin
         let start = Trope.position !trope position in
-        let length = string_length ?raw text in
-        change textbuf start 0 ?raw ~clickable:(action <> None) text;
-        trope := Trope.insert_before !trope position length
+        let text = text' ?raw ~clickable:(action <> None) start 0 text in
+        change textbuf text;
+        trope := Trope.insert_before !trope position text.new_len
       end
 
     let clear {textbuf; trope; beginning; position} =
       if Trope.member !trope position then begin
         let start = Trope.position !trope beginning in
         let length = Trope.position !trope position - start in
-        change textbuf start length "" ~raw:true ~clickable:false;
+        let text = text' ~raw:true start length "" in
+        change textbuf text;
         trope := Trope.remove_between !trope beginning position
       end
 
-    let rec cursor_class = {Class. text; sub; clear; is_closed}
+    let debug c =
+      prerr_endline @@
+      match c.action with
+      | None -> "NO ACTION"
+      | Some _ -> "ACTION"
+
+    let rec cursor_class = {Class. text; sub; clear; is_closed; debug}
     and sub ?action current =
       Class.Cursor (cursor_class, sub' ?action current)
+
+    let rec dump pos = function
+      | (n, c) :: cs ->
+        let pos = n + pos in
+        Printf.eprintf "cursor at %d " pos;
+        let lazy c = Trope.content c in
+        debug c;
+        dump pos cs
+      | [] -> ()
 
     let textbuf_class = {
       Class.
@@ -186,6 +211,8 @@ module Textbuf = struct
             trope := Trope.insert ~at:text.position ~len:text.new_len !trope
         );
       click = (fun t offset ->
+          prerr_endline "DUMP";
+          dump 0 (Trope.to_list !(t.trope));
           match Trope.find_before !(t.trope) offset with
           | None -> exit 4
           | Some cursor ->
@@ -258,9 +285,11 @@ module Nav = struct
     )
 
   let next t =
+    prerr_endline "NEXT";
     match t.next with
     | [] -> ()
     | page :: pages ->
+      prerr_endline "NEXT PAGE";
       t.prev <- t.page :: t.prev;
       t.page <- page;
       t.next <- pages;
@@ -277,11 +306,11 @@ module Nav = struct
 
   let render_header t cursor =
     if not_closed t then (
-      link cursor "<<" (fun _ -> prev t);
+      link cursor "⏪" (fun _ -> prev t);
       text cursor " ";
-      link cursor "[?]" (fun _ -> refresh t);
+      link cursor "↻" (fun _ -> refresh t);
       text cursor " ";
-      link cursor ">>" (fun _ -> next t)
+      link cursor	"⏩" (fun _ -> next t)
     )
 
   let make cursor label content =
@@ -333,7 +362,7 @@ module Tree = struct
 
   let add_leaf ?action t =
     indent t;
-    text t.cursor "[ ] ";
+    (*text t.cursor "  ";*)
     let result = sub ?action t.cursor in
     text t.cursor "\n";
     result
@@ -341,16 +370,16 @@ module Tree = struct
   let add_node children ?action ?(opened=ref false) t =
     indent t;
     let body = ref None in
-    link t.cursor (if !opened then "[-]" else "[+]") (fun c ->
+    link t.cursor (if !opened then "▪" else "▫") (fun c ->
         match !body with
         | None -> ()
         | Some t' when !opened ->
           opened := false;
-          clear c; text c "[+]";
+          clear c; text c "▫";
           clear t'.cursor
         | Some t' ->
           opened := true;
-          clear c; text c "[-]";
+          clear c; text c "▪";
           children t'
       );
     text t.cursor " ";
