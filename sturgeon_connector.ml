@@ -35,8 +35,7 @@ let write_all buf fd sz =
     x := !x + Unix.write_substring fd buf !x (sz - !x)
   done
 
-let pipe name =
-  let path = Filename.concat dir name in
+let pipe path =
   let socket = Unix.socket Unix.PF_UNIX Unix.SOCK_STREAM 0 in
   let addr = Unix.ADDR_UNIX path in
   try
@@ -66,7 +65,7 @@ let pipe name =
     exit 1
 
 let usage () =
-  Printf.eprintf "Usage:\n%s list\n%s which <socket>\n%s open <socket>\n"
+  Printf.eprintf "Usage:\n%s list\n%s which <socket>\n%s pipe <socket>\n"
     Sys.argv.(0) Sys.argv.(0) Sys.argv.(0);
   exit 1
 
