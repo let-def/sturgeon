@@ -86,7 +86,6 @@ module Class : sig
     clear     : 'a -> unit;
     sub       : ?action:action option -> 'a -> cursor';
     is_closed : 'a -> bool;
-    debug     : 'a -> unit;
   }
 
   val make_cursor : 'a cursor -> 'a -> cursor'

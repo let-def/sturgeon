@@ -48,7 +48,6 @@ module Class = struct
     clear     : 'a -> unit;
     sub       : ?action:action option -> 'a -> cursor';
     is_closed : 'a -> bool;
-    debug     : 'a -> unit;
   }
   and cursor' = Cursor : 'a cursor * 'a -> cursor'
   and action = cursor' -> unit
@@ -68,9 +67,6 @@ let text (Class.Cursor (c, i)) ?raw ?properties txt =
 let clear (Class.Cursor (c, i)) =
   c.Class.clear i
 
-let debug (Class.Cursor (c, i)) =
-  c.Class.debug i
-
 let sub ?action (Class.Cursor (c, i)) =
   c.Class.sub ?action i
 
@@ -87,7 +83,6 @@ let rec null_cursor = Class.Cursor ({
     clear     = (fun () -> ());
     sub       = (fun ?action:_ () -> null_cursor);
     is_closed = (fun () -> true);
-    debug     = (fun () -> prerr_endline "NULL");
   }, ())
 
 module Textbuf = struct
@@ -180,24 +175,9 @@ module Textbuf = struct
         trope := Trope.remove_between !trope beginning position
       end
 
-    let debug c =
-      prerr_endline @@
-      match c.action with
-      | None -> "NO ACTION"
-      | Some _ -> "ACTION"
-
-    let rec cursor_class = {Class. text; sub; clear; is_closed; debug}
+    let rec cursor_class = {Class. text; sub; clear; is_closed}
     and sub ?action current =
       Class.Cursor (cursor_class, sub' ?action current)
-
-    let rec dump pos = function
-      | (n, c) :: cs ->
-        let pos = n + pos in
-        Printf.eprintf "cursor at %d " pos;
-        let lazy c = Trope.content c in
-        debug c;
-        dump pos cs
-      | [] -> ()
 
     let textbuf_class = {
       Class.
@@ -211,8 +191,6 @@ module Textbuf = struct
             trope := Trope.insert ~at:text.position ~len:text.new_len !trope
         );
       click = (fun t offset ->
-          prerr_endline "DUMP";
-          dump 0 (Trope.to_list !(t.trope));
           match Trope.find_before !(t.trope) offset with
           | None -> exit 4
           | Some cursor ->
@@ -285,11 +263,9 @@ module Nav = struct
     )
 
   let next t =
-    prerr_endline "NEXT";
     match t.next with
     | [] -> ()
     | page :: pages ->
-      prerr_endline "NEXT PAGE";
       t.prev <- t.page :: t.prev;
       t.page <- page;
       t.next <- pages;
