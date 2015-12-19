@@ -60,10 +60,17 @@ let accept server =
   | Some socket ->
     let client, _ = Unix.accept socket in
     let oc = Unix.out_channel_of_descr client in
+    let olock = Mutex.create () in
     let send sexp =
-      Sexp.tell_sexp (output_string oc) sexp;
-      output_char oc '\n';
-      flush oc
+      Mutex.lock olock;
+      try
+        Sexp.tell_sexp (output_string oc) sexp;
+        output_char oc '\n';
+        flush oc;
+        Mutex.unlock olock;
+      with exn ->
+        Mutex.unlock olock;
+        raise exn
     in
     let cogreetings = server.cogreetings in
     let greetings = match server.greetings with

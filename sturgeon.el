@@ -14,7 +14,7 @@
     (let ((line (cons (car lines) (process-get proc 'sturgeon-lines))))
       (setcar lines (apply 'concat (reverse line))))
     (let ((lines lines))
-      (while (cdr (cdr lines)) (setq lines (cdr lines)))
+      (while (cddr lines) (setq lines (cdr lines)))
       (process-put proc 'sturgeon-lines (cdr lines))
       (setcdr lines nil))
     (dolist (line lines)

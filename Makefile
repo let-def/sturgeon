@@ -9,6 +9,7 @@ SOURCES =                \
 	recipes.mli recipes.ml
 
 PACKS = grenier.trope
+THREADS = 1
 
 OCAMLFLAGS += -g
 OCAMLLDFLAGS += -g
