@@ -8,8 +8,7 @@ SOURCES =                \
 	stui.mli    stui.ml    \
 	recipes.mli recipes.ml
 
-PACKS = grenier.trope
-THREADS = 1
+PACKS = grenier.trope lwt
 
 OCAMLFLAGS += -g
 OCAMLLDFLAGS += -g

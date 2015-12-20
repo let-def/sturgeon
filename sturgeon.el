@@ -414,7 +414,7 @@
                (positions (caddr  value))
                (text      (cadddr value))
                (flags     (cddddr value))
-               (start     (1+ (car positions)))
+               (start     (car positions))
                (length    (cdr positions))
                (inhibit-read-only t)
                (sturgeon--active-cursor cursor))
@@ -424,7 +424,7 @@
               (when (> length 0)
                 (let ((pos (sturgeon--commute-op cursor 'remove start length)))
                  (when (> (cdr pos) 0)
-                   (goto-char (car pos))
+                   (goto-char (1+ (car pos)))
                    (delete-char (cdr pos) nil))))
               (when (and text (> (length text) 0))
                 (let ((pos (sturgeon--commute-op cursor 'insert start (length text))))
@@ -433,7 +433,7 @@
                      (setq text (decode-coding-string text 'utf-8 t)))
                    (unless (member 'edit flags)
                      (setq text (propertize text 'read-only t)))
-                   (goto-char (car pos))
+                   (goto-char (1+ (car pos)))
                    (if (member 'action flags)
                        (insert-text-button
                         text

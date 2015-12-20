@@ -1,7 +1,7 @@
 version = "0.1"
 description = "A toolkit for communicating with Emacs"
 
-requires = "unix grenier.trope"
+requires = "unix grenier.trope lwt.unix"
 
 archive(byte) = "sturgeon.cma"
 archive(native) = "sturgeon.cmxa"
