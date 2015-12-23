@@ -1,0 +1,8 @@
+#require "sturgeon";;
+open Sturgeon;;
+Sys.signal Sys.sigpipe Sys.Signal_ignore;;
+let k = ref Tui.null_cursor;;
+let _ = Lwt.async @@ fun () ->
+  let server = Recipes.text_server "utop" (fun ~args ~set_title k' -> k := k') in
+  let rec aux () = Lwt.bind (Recipes.accept server) aux in
+  aux ()
