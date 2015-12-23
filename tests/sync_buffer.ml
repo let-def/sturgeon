@@ -70,9 +70,8 @@ end
 let () =
   ignore (Sys.signal Sys.sigpipe Sys.Signal_ignore);
   let open Sexp in
-  Recipes.main_loop @@
   let hub = Hub.make () in
-  Recipes.server ~cogreetings:(function
+  let server = Recipes.server ~cogreetings:(function
       | C (S "textbuf", C (session, args)) ->
         let a, set_title = Stui.accept_textbuf session in
         set_title "test";
@@ -81,3 +80,8 @@ let () =
         Tui.Textbuf.connect ~a ~b
       | sexp -> Session.cancel sexp
     ) "sync"
+  in
+  let rec loop () =
+    Lwt.bind (Recipes.accept server) loop
+  in
+  Lwt_main.run (loop ())
