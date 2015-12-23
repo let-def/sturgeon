@@ -1,0 +1,18 @@
+opam-version: "1.2"
+name: "sturgeon"
+version: "0.1"
+maintainer: "Frederic Bour <frederic.bour@lakaban.net>"
+authors: "Frederic Bour <frederic.bour@lakaban.net>"
+homepage: "https://github.com/def-lkb/sturgeon"
+bug-reports: "https://github.com/def-lkb/sturgeon"
+license: "MIT"
+dev-repo: "https://github.com/def-lkb/sturgeon.git"
+build: [
+  [make]
+]
+install: [make "install"]
+remove: ["ocamlfind" "remove" "sturgeon"]
+depends: [
+  "ocamlfind" {build}
+  "lwt"
+]
