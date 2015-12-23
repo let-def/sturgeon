@@ -273,6 +273,7 @@
 
 (defun sturgeon--send (process command)
   (setq command (prin1-to-string command))
+  (setq command (replace-regexp-in-string "\n" "\\\\n" command))
   (sturgeon--debug "<" command)
   (process-send-string process command)
   (process-send-string process "\n"))
