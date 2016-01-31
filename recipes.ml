@@ -55,15 +55,24 @@ let accept server =
   | None -> return_unit
   | Some socket ->
     Lwt_unix.accept socket >|= fun (client, _) ->
-    let fd = Lwt_unix.unix_file_descr client in
-    let oc = Unix.out_channel_of_descr fd in
+    let o, sink = Lwt_stream.create () in
     let ic = Lwt_io.of_fd ~mode:Lwt_io.input client in
+    let oc = Lwt_io.of_fd ~mode:Lwt_io.output client in
+    Lwt.async (fun () ->
+        let rec loop () =
+          Lwt_stream.get o >>= function
+          | None -> Lwt_io.close oc
+          | Some chunk ->
+              let chunks = chunk :: Lwt_stream.get_available o in
+              let string = String.concat "" chunks in
+              Lwt_io.write_from_string_exactly oc string 0 (String.length string)
+              >>= loop
+        in
+        loop ()
+      );
     let send sexp =
-      try
-        Sexp.tell_sexp (output_string oc) sexp;
-        output_char oc '\n';
-        flush oc
-      with _ -> () (* Can raise broken pipe *)
+      Sexp.tell_sexp (fun s -> sink (Some s)) sexp;
+      sink (Some "\n")
     in
     let cogreetings = server.cogreetings in
     let greetings = match server.greetings with
