@@ -36,5 +36,8 @@ reinstall:
 	-$(MAKE) uninstall
 	$(MAKE) install
 
-sturgeon-connector: sturgeon.cmxa sturgeon_connector.ml
+sturgeon-connector: sturgeon.cmxa connector/sturgeon_connector.ml
 	ocamlfind opt -linkpkg -package grenier.trope,unix -o $@ $^
+
+clean::
+	rm -f connector/*.cm* connector/*.o sturgeon-connector
