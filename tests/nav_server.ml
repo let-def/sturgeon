@@ -1,6 +1,6 @@
 open Sturgeon
 open Session
-open Tui
+open Inuit
 
 let () =
   let fd = Unix.openfile "sturgeon.log"

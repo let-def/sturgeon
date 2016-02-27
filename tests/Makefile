@@ -6,6 +6,6 @@ clean:
 	rm -f $(EXAMPLES) *.cm* *.o
 
 $(EXAMPLES):
-	ocamlfind opt -package grenier.trope,sturgeon,unix -g -linkpkg -o $@ $@.ml
+	ocamlfind opt -package grenier.trope,inuit,sturgeon,unix -g -linkpkg -o $@ $@.ml
 
 .PHONY: $(EXAMPLES)

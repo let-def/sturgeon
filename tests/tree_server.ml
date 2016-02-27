@@ -1,6 +1,6 @@
 open Sturgeon
 open Session
-open Tui
+open Inuit
 
 let rec children prefix t =
   for i = 0 to 9 do
