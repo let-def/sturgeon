@@ -14,5 +14,7 @@ install: [make "install"]
 remove: ["ocamlfind" "remove" "sturgeon"]
 depends: [
   "ocamlfind" {build}
+  "grenier"
+  "inuit"
   "lwt"
 ]

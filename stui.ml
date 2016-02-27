@@ -1,6 +1,5 @@
 open Sexp
 open Session
-open Tui
 
 module Remote_textbuf = struct
   type revision = {
@@ -74,7 +73,7 @@ module Remote_textbuf = struct
 
   type t = {
     commands: command_stream;
-    mutable textbuf: Tui.Textbuf.t;
+    mutable textbuf: Textbuf.simple;
 
     mutable remote: int;
     mutable latest_remote: int;
@@ -195,12 +194,13 @@ module Remote_textbuf = struct
             with
             | exception Not_found -> ()
             | (start, length) ->
-              let raw = sexp_mem (S "raw") flags in
-              let clickable = sexp_mem (S "action") flags in
-              let editable = sexp_mem (S "edit") flags in
+              let flags =
+                cons_if (sexp_mem (S "raw") flags) `Raw @@
+                cons_if (sexp_mem (S "action") flags) `Clickable @@
+                cons_if (sexp_mem (S "edit") flags) `Editable []
+              in
               Textbuf.change t.textbuf
-                (Textbuf.text ~raw ~clickable ~editable
-                   start length replacement)
+                (Textbuf.text ~flags start length replacement)
           end
         | Feed r ->
           cancel r
@@ -217,33 +217,33 @@ module Remote_textbuf = struct
     let open Textbuf in
     t.local <- t.local + 1;
     if txt.old_len <> 0 then
-      t.revisions <- (t.local, R (txt.position, txt.old_len)) :: t.revisions;
+      t.revisions <- (t.local, R (txt.offset, txt.old_len)) :: t.revisions;
     if txt.new_len <> 0 then
-      t.revisions <- (t.local, I (txt.position, txt.new_len)) :: t.revisions;
+      t.revisions <- (t.local, I (txt.offset, txt.new_len)) :: t.revisions;
     push_command t
-      (Substitute { start = txt.position; length = txt.old_len;
-                    raw = txt.text_raw; replacement = txt.text;
-                    flags = (cons_if txt.clickable "action" @@
-                             cons_if txt.editable "edit" []) })
+      (Substitute { start = txt.offset; length = txt.old_len;
+                    raw = List.mem `Raw txt.flags;
+                    replacement = txt.text;
+                    flags = (cons_if (List.mem `Clickable txt.flags) "action" @@
+                             cons_if (List.mem `Editable txt.flags) "edit" []) })
 
   let click t offset =
     push_command t (Click offset)
 
-  let class_ = {
-    Class.
-    connect = (fun t buf -> t.textbuf <- buf);
-    connected = ignore; change; click;
-  }
 end
 
 let textbuf_session () =
   let session, t = Remote_textbuf.create () in
-  session, Class.make_textbuf Remote_textbuf.class_ t
+  session, object
+    method connect buf = t.Remote_textbuf.textbuf <- buf
+    method change text = Remote_textbuf.change t text
+    method click offset = Remote_textbuf.click t offset
+  end
 
 let cursor_greetings ~name =
   let cursor, a = Textbuf.with_cursor () in
   let session, b = textbuf_session () in
-  Tui.Textbuf.connect ~a ~b;
+  Textbuf.connect ~a ~b;
   sexp_of_list [S "create-buffer"; T name; session], cursor
 
 let accept_textbuf = function
@@ -256,5 +256,5 @@ let accept_textbuf = function
 let accept_cursor session =
   let a, set_title = accept_textbuf session in
   let cursor, b = Textbuf.with_cursor () in
-  Tui.Textbuf.connect ~a ~b;
+  Textbuf.connect ~a ~b;
   cursor, set_title

@@ -4,11 +4,11 @@ all: byte-code-library native-code-library sturgeon-connector
 SOURCES =                \
 	sexp.mli    sexp.ml    \
 	session.mli session.ml \
-	tui.mli     tui.ml     \
+	textbuf.mli textbuf.ml \
 	stui.mli    stui.ml    \
 	recipes.mli recipes.ml
 
-PACKS = grenier.trope lwt
+PACKS = grenier.trope inuit lwt
 
 OCAMLFLAGS += -g
 OCAMLLDFLAGS += -g

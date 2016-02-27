@@ -1,8 +1,6 @@
-open Tui
+val textbuf_session : unit -> Session.t * Textbuf.simple
 
-val textbuf_session : unit -> Session.t * Textbuf.t
+val cursor_greetings : name:string -> Session.t * Inuit.flags Inuit.cursor
 
-val cursor_greetings : name:string -> Session.t * cursor
-
-val accept_textbuf : Session.t -> textbuf * (string -> unit)
-val accept_cursor : Session.t -> cursor * (string -> unit)
+val accept_textbuf : Session.t -> Textbuf.simple * (string -> unit)
+val accept_cursor : Session.t -> Inuit.flags Inuit.cursor * (string -> unit)

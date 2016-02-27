@@ -5,7 +5,7 @@ val command :
 
 val text_command :
   (args:Session.t ->
-   set_title:(string -> unit) -> Tui.cursor -> unit) -> 'a
+   set_title:(string -> unit) -> Inuit.flags Inuit.cursor -> unit) -> 'a
 
 type server
 
@@ -17,7 +17,7 @@ val server:
 val text_server:
   string ->
   (args:Session.t ->
-   set_title:(string -> unit) -> Tui.cursor -> unit) ->
+   set_title:(string -> unit) -> Inuit.flags Inuit.cursor -> unit) ->
   server
 
 val accept:
