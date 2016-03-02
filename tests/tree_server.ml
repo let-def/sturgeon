@@ -14,8 +14,9 @@ let () =
   Recipes.text_command
   @@ fun ~args ~set_title cursor ->
   set_title "tree-server";
-
-  Nav.make cursor "0 to 9" @@ fun nav ->
-  let body = Nav.body nav in
-  text body "\n";
-  children "/" (Tree.make body)
+  let nav =
+    Nav.make "0 to 9" @@ fun {Nav. body; nav} ->
+    text body "\n";
+    children "/" (Tree.make body)
+  in
+  Nav.render nav cursor
