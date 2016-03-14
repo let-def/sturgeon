@@ -20,5 +20,11 @@ val text_server:
    set_title:(string -> unit) -> Inuit.flags Inuit.cursor -> unit) ->
   server
 
-val accept:
-  server -> unit Lwt.t
+val accept :
+  server -> unit
+
+val main_loop :
+  server -> unit
+
+val stop_server :
+  server -> unit
