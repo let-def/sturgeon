@@ -63,17 +63,26 @@ let () =
   ignore (Sys.signal Sys.sigpipe Sys.Signal_ignore);
   let open Sexp in
   let hub = ref [] in
-  let server = Recipes.server ~cogreetings:(function
-      | C (S "textbuf", C (session, args)) ->
-        let a, set_title = Stui.accept_textbuf session in
-        set_title "test";
-        Textbuf.change a (Textbuf.text ~flags:[`Editable] 0 0 !buffer);
-        let b = new client hub in
-        Textbuf.connect ~a ~b
-      | sexp -> Session.cancel sexp
+  let lock = Mutex.create () in
+  let server = Recipes.server ~cogreetings:(fun arg ->
+      Mutex.lock lock;
+      match
+        begin match arg with
+          | C (S "textbuf", C (session, args)) ->
+            let a, set_title = Stui.accept_textbuf session in
+            set_title "test";
+            Textbuf.change a (Textbuf.text ~flags:[`Editable] 0 0 !buffer);
+            let b = new client hub in
+            Textbuf.connect ~a ~b
+          | sexp -> Session.cancel sexp
+        end
+      with
+      | x -> Mutex.unlock lock; x
+      | exception exn -> Mutex.unlock lock; raise exn
     ) "sync"
   in
-  let rec loop () =
-    Lwt.bind (Recipes.accept server) loop
-  in
-  Lwt_main.run (loop ())
+  Recipes.main_loop server
+  (*let rec loop () =
+      Lwt.bind (Recipes.accept server) loop
+    in
+    Lwt_main.run (loop ())*)
