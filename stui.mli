@@ -1,6 +1,11 @@
-val textbuf_session : unit -> Session.t * Textbuf.simple
+type flag = [`Clickable | `Editable | `Clicked]
+type buffer_shell = name:string -> flag Inuit.pipe -> unit
 
-val cursor_greetings : name:string -> Session.t * Inuit.flags Inuit.cursor
+val buffer_greetings :
+  unit -> Session.t * buffer_shell
 
-val accept_textbuf : Session.t -> Textbuf.simple * (string -> unit)
-val accept_cursor : Session.t -> Inuit.flags Inuit.cursor * (string -> unit)
+val create_buffer : buffer_shell -> name:string -> flag Inuit.pipe -> unit
+val create_cursor : buffer_shell -> name:string -> flag Inuit.cursor
+
+val accept_buffer : Session.t -> flag Inuit.pipe -> unit
+val accept_cursor : Session.t -> flag Inuit.cursor

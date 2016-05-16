@@ -1,6 +1,7 @@
 open Sturgeon
 open Session
 open Inuit
+open Inuit_widget
 
 let () =
   let fd = Unix.openfile "sturgeon.log"
@@ -10,8 +11,9 @@ let () =
   Unix.close fd
 
 let () =
-  Recipes.text_command @@ fun ~args ~set_title k ->
-  set_title "nav-server";
+  Recipes.text_command @@ fun ~args shell ->
+  Session.cancel args;
+  let k = Stui.create_cursor shell ~name:"nav-server" in
   let nav =
     Nav.make "Épiménide" @@ fun {Nav. title; body; nav} ->
     text body "Je mens.\n\n";

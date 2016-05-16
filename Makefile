@@ -4,7 +4,6 @@ all: byte-code-library native-code-library sturgeon-connector
 SOURCES =                \
 	sexp.mli    sexp.ml    \
 	session.mli session.ml \
-	textbuf.mli textbuf.ml \
 	stui.mli    stui.ml    \
 	recipes.mli recipes.ml
 

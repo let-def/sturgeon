@@ -1,23 +1,18 @@
 open Sexp
 open Session
 
-module Remote_textbuf = struct
+type flag = [`Clickable | `Editable | `Clicked]
+type patch = flag Inuit.patch
+
+module Remote_pipe = struct
   type revision = {
     r_remote: int;
     r_local: int;
   }
 
-  type substitution = {
-    start: int;
-    length: int;
-    replacement: string;
-    raw: bool;
-    flags: string list;
-  }
-
   type command =
-    | Substitute of substitution
-    | Click of int
+    | Patch of patch
+    | Ack
 
   type command_stream = {
     mutable sink: t neg option;
@@ -28,25 +23,44 @@ module Remote_textbuf = struct
   let sexp_of_revision {r_remote; r_local} =
     C (I r_remote, I r_local)
 
+  let sexp_of_flags flags =
+    let rec aux acc = function
+      | [] -> acc
+      | `Clickable :: xs -> aux (C (S "clickable", acc)) xs
+      | `Editable  :: xs -> aux (C (S "editable", acc)) xs
+      | `Clicked   :: xs -> aux (C (S "clicked", acc)) xs
+    in
+    aux (S "nil") flags
+
+  let flags_of_sexp sexp =
+    let rec aux acc = function
+      | C (S "clickable", xs) -> aux (`Clickable :: acc) xs
+      | C (S "editable", xs)  -> aux (`Editable :: acc) xs
+      | C (S "clicked", xs)   -> aux (`Clicked :: acc) xs
+      | S "nil" -> acc
+      | sexp ->
+        let sexp =
+          Sexp.transform_cons ~inj:(fun _ -> S "<abstract>") ~map:(fun x -> x)
+            sexp
+        in
+        prerr_endline ("Unknown flags: " ^ Sexp.to_string sexp);
+        acc
+    in
+    aux [] sexp
+
+  let sexp_of_command rev = function
+    | Patch {Inuit.Patch. offset; old_len; new_len; text; flags} ->
+      C (S "patch",
+         C (sexp_of_revision rev,
+            C (C (I offset, I old_len),
+               C (C (I new_len, T text),
+                  C (sexp_of_flags flags, sym_nil)))))
+    | Ack -> C (S "ack", C (sexp_of_revision rev, sym_nil))
+
   let cons_if cond x xs = if cond then x :: xs else xs
 
-  let send_command sink (rev,cmd) = match cmd with
-    | Substitute {start; length; replacement; raw; flags} ->
-      let cmd = sexp_of_list (
-          S "substitute" ::
-          sexp_of_revision rev ::
-          C (I start, I length) ::
-          T replacement ::
-          cons_if raw (S "raw") (List.map (fun s -> S s) flags)
-        )
-      in
-      sink (Feed cmd)
-    | Click offset ->
-      sink (Feed (sexp_of_list [
-          S "click";
-          sexp_of_revision rev;
-          I offset
-        ]))
+  let send_command sink (rev,command) =
+      sink (Feed (sexp_of_command rev command))
 
   let replace_sink commands sink =
     begin match commands.sink with
@@ -73,7 +87,6 @@ module Remote_textbuf = struct
 
   type t = {
     commands: command_stream;
-    mutable textbuf: Textbuf.simple;
 
     mutable remote: int;
     mutable latest_remote: int;
@@ -86,14 +99,14 @@ module Remote_textbuf = struct
   let revision_of_textbuf { remote; local } =
     { r_local = local; r_remote = remote }
 
-  let push_command t cmd =
-    let cmd = (revision_of_textbuf t, cmd) in
+  let push_command t command =
+    let command = (revision_of_textbuf t, command) in
     if t.commands.closed then ()
     else match t.commands.sink with
-      | None -> t.commands.queue <- cmd :: t.commands.queue
+      | None -> t.commands.queue <- command :: t.commands.queue
       | Some sink ->
         t.latest_remote <- t.remote;
-        send_command sink cmd
+        send_command sink command
 
   let update_revisions t (local, remote) =
     t.remote <- remote;
@@ -114,9 +127,7 @@ module Remote_textbuf = struct
         t.rev_tail <- xs
     end;
     if t.latest_remote < remote - 16 then
-      let subst = {start = 0; length = 0; raw = true;
-                   replacement = ""; flags = [] } in
-      push_command t (Substitute subst)
+      push_command t Ack
 
   let commute_remove (_,op') (s2, l2) = match op' with
     | R (s1, l1) ->
@@ -160,47 +171,50 @@ module Remote_textbuf = struct
     let op_arg = List.fold_right op_kind t.revisions op_arg in
     op_arg
 
+  let local_change t patch =
+    let open Inuit.Patch in
+    t.local <- t.local + 1;
+    if patch.old_len <> 0 then
+      t.revisions <- (t.local, R (patch.offset, patch.old_len)) :: t.revisions;
+    if patch.new_len <> 0 then
+      t.revisions <- (t.local, I (patch.offset, patch.new_len)) :: t.revisions;
+    push_command t (Patch patch)
+
   let create () =
     let commands = {
       sink   = None;
       closed = false;
       queue  = [];
     } in
-    let t = { commands; textbuf = Textbuf.null;
-                   remote = 0; latest_remote = 0; local = 0;
-                   revisions = []; rev_tail = [] };
-    in
+    let t = { commands; revisions = []; rev_tail = [];
+              remote = 0; latest_remote = 0; local = 0 } in
+    let pipe = Inuit.Pipe.make ~change:(local_change t) in
     let handler = M (Sink (function
         | Feed (C (S "sink", M (Sink sink))) ->
           (*Printf.eprintf "GOT SINK!\n";*)
           replace_sink commands (Some sink)
-        | Feed (C (S "click", C (C (I local, I remote), I point))) ->
-          update_revisions t (local, remote);
-          begin match commute_remote_op t commute_point point with
-            | exception Not_found -> ()
-            | point ->
-              Textbuf.click t.textbuf point
-          end
-        | Feed (C (S "substitute",
+
+        | Feed (C (S "ack", C (C (I local, I remote), S "nil"))) ->
+          update_revisions t (local, remote)
+
+        | Feed (C (S "patch",
                    C (C (I local, I remote),
-                      C (C (I start, I length),
-                         C (T replacement, flags))))) ->
+                      C (C (I offset, I old_len),
+                         C (C (I new_len, T text),
+                            C (flags, S "nil")))))) ->
           update_revisions t (local, remote);
           begin match
-              if length <> 0 then
-                commute_remote_op t commute_remove (start, length)
+              if old_len <> 0 then
+                commute_remote_op t commute_remove (offset, old_len)
               else
-                commute_remote_op t commute_point start, 0
+                commute_remote_op t commute_point offset, 0
             with
             | exception Not_found -> ()
-            | (start, length) ->
-              let flags =
-                cons_if (sexp_mem (S "raw") flags) `Raw @@
-                cons_if (sexp_mem (S "action") flags) `Clickable @@
-                cons_if (sexp_mem (S "edit") flags) `Editable []
-              in
-              Textbuf.change t.textbuf
-                (Textbuf.text ~flags start length replacement)
+            | (offset, replace) ->
+              let flags = flags_of_sexp flags in
+              (* Check sexp new_len = patch.new_len *)
+              Inuit.Pipe.commit pipe
+                (Inuit.Patch.make ~offset ~replace flags text)
           end
         | Feed r ->
           cancel r
@@ -211,50 +225,53 @@ module Remote_textbuf = struct
         | Quit _ -> ()
       ))
     in
-    handler, t
-
-  let change t txt =
-    let open Textbuf in
-    t.local <- t.local + 1;
-    if txt.old_len <> 0 then
-      t.revisions <- (t.local, R (txt.offset, txt.old_len)) :: t.revisions;
-    if txt.new_len <> 0 then
-      t.revisions <- (t.local, I (txt.offset, txt.new_len)) :: t.revisions;
-    push_command t
-      (Substitute { start = txt.offset; length = txt.old_len;
-                    raw = List.mem `Raw txt.flags;
-                    replacement = txt.text;
-                    flags = (cons_if (List.mem `Clickable txt.flags) "action" @@
-                             cons_if (List.mem `Editable txt.flags) "edit" []) })
-
-  let click t offset =
-    push_command t (Click offset)
-
+    handler, pipe
 end
 
-let textbuf_session () =
-  let session, t = Remote_textbuf.create () in
-  session, object
-    method connect buf = t.Remote_textbuf.textbuf <- buf
-    method change text = Remote_textbuf.change t text
-    method click offset = Remote_textbuf.click t offset
-  end
+type shell_status =
+  | Pending of Session.t list
+  | Connected of Session.t Session.neg
 
-let cursor_greetings ~name =
-  let cursor, a = Textbuf.with_cursor () in
-  let session, b = textbuf_session () in
-  Textbuf.connect ~a ~b;
-  sexp_of_list [S "create-buffer"; T name; session], cursor
+type buffer_shell = name:string -> flag Inuit.pipe -> unit
 
-let accept_textbuf = function
+let buffer_greetings () =
+  let status = ref (Pending []) in
+  let shell = function
+    | Feed (M (Sink t)) ->
+      begin match !status with
+        | Connected _ ->
+          failwith "Stui.buffer_greetings: invalid session, already connected"
+        | Pending xs ->
+          status := Connected t;
+          List.iter (fun x -> t (Feed x)) (List.rev xs)
+      end
+    | _ -> failwith "Stui.buffer_greetings: invalid session, unknown command"
+  in
+  let sexp = sexp_of_list [S "buffer-shell"; M (Once shell)] in
+  let create_buffer ~name pa =
+    let session, pb = Remote_pipe.create () in
+    Inuit.Pipe.connect ~a:pa ~b:pb;
+    let session = sexp_of_list [S "create-buffer"; T name; session] in
+    match !status with
+    | Pending xs -> status := Pending (session :: xs)
+    | Connected t -> t (Feed session)
+  in
+  sexp, create_buffer
+
+let accept_buffer session pa = match session with
   | M (Sink t) ->
-    let session, textbuf = textbuf_session () in
-    t (Feed (C (S "accept", session)));
-    textbuf, (fun str -> t (Feed (C (S "title", T str))))
-  | _ -> invalid_arg "Stui.accept_textbuf"
+    let session, pb = Remote_pipe.create () in
+    Inuit.Pipe.connect ~a:pa ~b:pb;
+    t (Feed (C (S "accept", session)))
+  | _ -> invalid_arg "Stui.accept_buffer"
 
 let accept_cursor session =
-  let a, set_title = accept_textbuf session in
-  let cursor, b = Textbuf.with_cursor () in
-  Textbuf.connect ~a ~b;
-  cursor, set_title
+  let cursor, pipe = Inuit.make () in
+  accept_buffer session pipe;
+  cursor
+
+let create_buffer (shell : buffer_shell) = shell
+let create_cursor (shell : buffer_shell) ~name =
+  let cursor, pipe = Inuit.make () in
+  create_buffer shell ~name pipe;
+  cursor

@@ -328,10 +328,11 @@
   (let* ((text (encode-coding-string
                 (buffer-substring-no-properties (1+ beg) (1+ end))
                 'utf-8 t))
-         (action (list 'substitute
+         (action (list 'patch
                   (cons (elt cursor 2) sturgeon--revision)
                   (cons beg len)
-                  text)))
+                  (cons (length text) text)
+                  nil)))
     (aset cursor 4 sturgeon--revision)
     (app-sink (elt cursor 1) action)))
 
@@ -352,7 +353,7 @@
     (aset cursor 4 (cdr revisions))
     (app-sink
      (elt cursor 1)
-     `(substitute ,(cons (cdr revisions) sturgeon--revision) (0 . 0) ""))))
+     `(ack ,(cons (cdr revisions) sturgeon--revision)))))
 
 (defun sturgeon--remap (s l x)
   (if (< x s) x
@@ -397,8 +398,9 @@
   (let* ((cursor (button-get x 'sturgeon-cursor))
          (sink   (elt cursor 1))
          (rev    (cons (elt cursor 2) sturgeon--revision))
-         (offset (1- (marker-position x))))
-    (app-sink sink (cons 'click (cons rev offset)))))
+         (offset (1- (marker-position x)))
+         (action `(patch ,rev (,offset . 0) (0 . "") (clicked))))
+    (app-sink sink action)))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
@@ -408,65 +410,70 @@
 
     (lambda-sink value
       (cond
-       ;; Clear sub regions
-       ((eq (car value) 'substitute)
+       ((eq (car value) 'ack)
+        (let* ((revisions (cadr value)))
+          (sturgeon--update-revisions cursor revisions)))
+       ((eq (car value) 'patch)
         (let* ((buffer    (elt cursor 0))
-               (revisions (cadr   value))
-               (positions (caddr  value))
-               (text      (cadddr value))
-               (flags     (cddddr value))
-               (start     (car positions))
-               (length    (cdr positions))
+               (revisions (elt value 1))
+               (positions (elt value 2))
+               (text      (cdr (elt value 3))) ; check car = length text?
+               (flags     (elt value 4))
+               (offset    (car positions))
+               (oldlen    (cdr positions))
                (inhibit-read-only t)
                (sturgeon--active-cursor cursor))
           (sturgeon--update-revisions cursor revisions)
           (with-current-buffer buffer
             (save-excursion
-              (when (> length 0)
-                (let ((pos (sturgeon--commute-op cursor 'remove start length)))
+              (when (> oldlen 0)
+                (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
                  (when (> (cdr pos) 0)
                    (goto-char (1+ (car pos)))
                    (delete-char (cdr pos) nil))))
               (when (and text (> (length text) 0))
-                (let ((pos (sturgeon--commute-op cursor 'insert start (length text))))
+                (let ((pos (sturgeon--commute-op cursor 'insert offset (length text))))
                  (when (> (cdr pos) 0)
                    (unless (member 'raw flags)
                      (setq text (decode-coding-string text 'utf-8 t)))
-                   (unless (member 'edit flags)
+                   (unless (member 'editable flags)
                      (setq text (propertize text 'read-only t)))
                    (goto-char (1+ (car pos)))
-                   (if (member 'action flags)
+                   (if (member 'clickable flags)
                        (insert-text-button
                         text
                         'action 'sturgeon-ui--cursor-action
                         'sturgeon-cursor cursor)
                       (insert text)))))))))))))
 
-(defun sturgeon-ui-handler (value)
+(defun sturgeon-ui-handler (value &optional buffer point)
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
-           (let ((buffer (get-buffer-create (cadr value)))
-                 (sink (caddr value)))
+           (let* ((name (cadr value))
+                  (buffer (if (not buffer)
+                              (get-buffer-create (generate-new-buffer-name name))
+                            (with-current-buffer buffer
+                              (rename-buffer name t)
+                              buffer)))
+                  (point (if point point
+                           (with-current-buffer buffer (point-min))))
+                  (sink (caddr value)))
              (app-any
-              sink
-              (cons 'sink (sturgeon-ui--make-cursor buffer (point-min) sink)))))
+              sink (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
           (t (sturgeon-cancel value)))))
 
-(defun sturgeon-ui-greetings (buffer &rest args)
-  (lexical-let ((buffer buffer) (marker (point-marker)))
-    `(textbuf
-      ,(lambda-sink value
-        (cond
-         ((eq (car-safe value) 'accept)
-          (switch-to-buffer buffer)
-          (let ((point (marker-position marker))
-                (sink (cdr value)))
-            (app-any sink
-                     (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
-         ((eq (car-safe value) 'title)
-          (with-current-buffer buffer (rename-buffer (cdr value) t)))
-         (t (sturgeon-cancel value))))
-      ,@args)))
+(defun sturgeon-ui-cogreetings (buffer)
+  (lexical-let* ((buffer buffer)
+                 (marker (with-current-buffer buffer (point-marker))))
+    (lambda (value)
+      (cond
+       ((eq (car-safe value) 'buffer-shell)
+        (app-once (cadr value)
+                  (lambda-sink value
+                    (let ((point (when buffer (marker-position marker))))
+                      (sturgeon-ui-handler value buffer point)))))
+       (t (sturgeon-cancel value)))
+      )))
 
 (defun sturgeon-launch (filename)
   (interactive "fProgram path: ")
@@ -474,7 +481,7 @@
     (sturgeon-start-process
      filename buffer
      filename nil
-     :greetings (sturgeon-ui-greetings buffer nil))
+     :cogreetings (sturgeon-ui-cogreetings buffer))
     (switch-to-buffer buffer)))
 
 (defun sturgeon-connect (name)
@@ -487,11 +494,11 @@
         (sturgeon-start-process
           name buffer
           "sturgeon-connector" (list "pipe" name)
-          :greetings (sturgeon-ui-greetings buffer nil))
+          :cogreetings (sturgeon-ui-cogreetings buffer))
       (let ((path (or (car-safe (process-lines "sturgeon-connector" "which" name)) name)))
          (sturgeon-start (make-network-process
                           :name name :buffer buffer :family 'local :service path)
-                         :greetings (sturgeon-ui-greetings buffer nil))))
+                         :cogreetings (sturgeon-ui-cogreetings buffer))))
       (switch-to-buffer buffer)))
 
 (defun sturgeon-remote-launch (server)

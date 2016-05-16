@@ -17,19 +17,8 @@ let command ?greetings ?cogreetings () =
   in
   aux ()
 
-let text_command f =
-  let open Sexp in
-  command ~cogreetings:(function
-      | C (S "textbuf", C (session, args)) ->
-        let cursor, set_title = Stui.accept_cursor session in
-        f ~args ~set_title cursor
-      | sexp -> Session.cancel sexp
-    )
-    ()
-
 type server = {
-  greetings: (unit -> Session.t) option;
-  cogreetings: (Session.t -> unit) option;
+  client: unit -> (Session.t option * (Session.t -> unit) option);
 
   mutable socket: Unix.file_descr option;
   mutable clients: (Unix.file_descr) list;
@@ -39,7 +28,7 @@ type server = {
     Hashtbl.t;
 }
 
-let server ?greetings ?cogreetings name =
+let server ~client name =
   let dir = Filename.concat (Filename.get_temp_dir_name ())
       (Printf.sprintf "sturgeon.%d" (Unix.getuid ())) in
   if not (Sys.file_exists dir) then
@@ -52,7 +41,7 @@ let server ?greetings ?cogreetings name =
   at_exit (fun () -> Unix.unlink name);
   Unix.listen socket 3;
   { socket = Some socket; clients = []; connections = Hashtbl.create 7;
-    greetings; cogreetings }
+    client }
 
 let accept server =
   match server.socket with
@@ -72,11 +61,7 @@ let accept server =
         Mutex.unlock olock;
         raise exn
     in
-    let cogreetings = server.cogreetings in
-    let greetings = match server.greetings with
-      | None -> None
-      | Some f -> Some (f ())
-    in
+    let greetings, cogreetings = server.client () in
     let received, status = Session.connect ?greetings ?cogreetings send in
     let stdin = Sexp.of_file_descr ~on_read:ignore client in
     server.clients <- client :: server.clients;
@@ -129,11 +114,15 @@ let stop_server server =
     List.iter Unix.close clients;
     Unix.close socket
 
+let text_command f =
+  let open Sexp in
+  let greetings, shell = Stui.buffer_greetings () in
+  command ~greetings ~cogreetings:(fun args -> f ~args shell) ()
+
 let text_server name f =
   let open Sexp in
-  server ~cogreetings:(function
-      | C (S "textbuf", C (session, args)) ->
-        let cursor, set_title = Stui.accept_cursor session in
-        f ~args ~set_title cursor
-      | sexp -> Session.cancel sexp
-    ) name
+  server ~client:(fun () ->
+      let greetings, shell = Stui.buffer_greetings () in
+      Some greetings, Some (fun args -> f ~args shell)
+    )
+    name

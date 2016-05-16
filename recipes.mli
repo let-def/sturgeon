@@ -3,21 +3,17 @@ val command :
   ?cogreetings:(Session.t -> unit) ->
   unit -> 'a
 
-val text_command :
-  (args:Session.t ->
-   set_title:(string -> unit) -> Inuit.flags Inuit.cursor -> unit) -> 'a
+val text_command : (args:Session.t -> Stui.buffer_shell -> unit) -> 'a
 
 type server
 
 val server:
-  ?greetings:(unit -> Session.t) ->
-  ?cogreetings:(Session.t -> unit) ->
+  client:(unit -> Session.t option * (Session.t -> unit) option) ->
   string -> server
 
 val text_server:
   string ->
-  (args:Session.t ->
-   set_title:(string -> unit) -> Inuit.flags Inuit.cursor -> unit) ->
+  (args:Session.t -> Stui.buffer_shell -> unit) ->
   server
 
 val accept :
