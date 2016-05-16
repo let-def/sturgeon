@@ -1,6 +1,7 @@
 open Sturgeon
 open Session
 open Inuit
+open Inuit_widget
 
 let rec children prefix t =
   for i = 0 to 9 do
@@ -12,8 +13,8 @@ let rec children prefix t =
 
 let () =
   Recipes.text_command
-  @@ fun ~args ~set_title cursor ->
-  set_title "tree-server";
+  @@ fun ~args shell ->
+  let cursor = Stui.create_cursor shell ~name:"tree-server" in
   let nav =
     Nav.make "0 to 9" @@ fun {Nav. body; nav} ->
     text body "\n";

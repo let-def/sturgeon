@@ -18,46 +18,21 @@ let find_pos s pos count =
 let buffer = ref ""
 
 let apply_change =
-  let change s txt =
-    let pos1 = find_pos s txt.offset 0 in
-    let pos2 = find_pos s txt.old_len pos1 in
-    String.sub s 0 pos1 ^ txt.text ^ String.sub s pos2 (String.length s - pos2)
+  let change s patch =
+    let open Inuit.Patch in
+    let pos1 = find_pos s patch.offset 0 in
+    let pos2 = find_pos s patch.old_len pos1 in
+    String.sub s 0 pos1 ^ patch.text ^ String.sub s pos2 (String.length s - pos2)
   in
   fun txt -> buffer := change !buffer txt
 
-class client (hub : client list ref) =
-  object (self)
-    val mutable remote : Textbuf.simple = Textbuf.null
-    method connect buf = remote <- buf
+let clients = ref []
 
-    method remote_change txt =
-      remote#change txt
-
-    method change (txt : Inuit.flags Textbuf.text) =
-      apply_change txt;
-      List.iter (fun (client : client) ->
-          if client <> (self :> client) then
-            let txt = text
-                ~flags:(`Editable :: txt.flags)
-                txt.offset
-                txt.old_len
-                txt.text
-            in
-            client#remote_change txt)
-        !hub
-
-    method remote_click ofs =
-      remote#click ofs
-
-    method click ofs =
-      List.iter (fun (client : client) ->
-          if client <> (self :> client) then
-            client#remote_click ofs
-        ) !hub
-
-    initializer
-      hub := (self :> client) :: !hub
-  end
+let client_change client patch =
+  List.iter (fun client' ->
+      if client != client' then
+        Inuit.Pipe.commit client' patch
+    ) !clients
 
 let () =
   ignore (Sys.signal Sys.sigpipe Sys.Signal_ignore);
