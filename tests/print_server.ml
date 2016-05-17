@@ -1,6 +1,6 @@
 open Sturgeon
 open Session
-open Inuit
+open Inuit.Cursor
 
 let () =
   let fd = Unix.openfile "copycat.log"
@@ -23,7 +23,7 @@ let () =
   let _ = Inuit_widget.Check.make k in
   text k " Check me\n";
   text k "Edit me: ";
-  let k' = ref (Inuit.cursor_of_region Inuit.Region.null) in
+  let k' = ref (cursor_of_region Inuit.Region.null) in
   let _ = Inuit_widget.Edit.make k ~on_change:(fun t ->
       let str = Inuit_widget.Edit.state t in
       clear !k';

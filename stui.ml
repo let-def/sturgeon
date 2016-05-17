@@ -266,12 +266,12 @@ let accept_buffer session pa = match session with
   | _ -> invalid_arg "Stui.accept_buffer"
 
 let accept_cursor session =
-  let cursor, pipe = Inuit.make () in
+  let cursor, pipe = Inuit.Cursor.make () in
   accept_buffer session pipe;
   cursor
 
 let create_buffer (shell : buffer_shell) = shell
 let create_cursor (shell : buffer_shell) ~name =
-  let cursor, pipe = Inuit.make () in
+  let cursor, pipe = Inuit.Cursor.make () in
   create_buffer shell ~name pipe;
   cursor

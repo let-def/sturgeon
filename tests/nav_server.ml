@@ -1,6 +1,6 @@
 open Sturgeon
 open Session
-open Inuit
+open Inuit.Cursor
 open Inuit_widget
 
 let () =
