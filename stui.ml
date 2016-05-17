@@ -1,8 +1,7 @@
 open Sexp
 open Session
 
-type flag = [`Clickable | `Editable | `Clicked]
-type patch = flag Inuit.patch
+type flag = [`Clickable | `Clicked | `Editable | `Invisible]
 
 module Remote_pipe = struct
   type revision = {
@@ -11,7 +10,7 @@ module Remote_pipe = struct
   }
 
   type command =
-    | Patch of patch
+    | Patch of flag Inuit.patch
     | Ack
 
   type command_stream = {
@@ -28,6 +27,7 @@ module Remote_pipe = struct
       | [] -> acc
       | `Clickable :: xs -> aux (C (S "clickable", acc)) xs
       | `Editable  :: xs -> aux (C (S "editable", acc)) xs
+      | `Invisible :: xs -> aux (C (S "invisible", acc)) xs
       | `Clicked   :: xs -> aux (C (S "clicked", acc)) xs
     in
     aux (S "nil") flags
@@ -35,8 +35,9 @@ module Remote_pipe = struct
   let flags_of_sexp sexp =
     let rec aux acc = function
       | C (S "clickable", xs) -> aux (`Clickable :: acc) xs
-      | C (S "editable", xs)  -> aux (`Editable :: acc) xs
       | C (S "clicked", xs)   -> aux (`Clicked :: acc) xs
+      | C (S "editable", xs)  -> aux (`Editable :: acc) xs
+      | C (S "invisible", xs)  -> aux (`Invisible :: acc) xs
       | S "nil" -> acc
       | sexp ->
         let sexp =

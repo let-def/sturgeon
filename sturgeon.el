@@ -438,6 +438,8 @@
                      (setq text (decode-coding-string text 'utf-8 t)))
                    (unless (member 'editable flags)
                      (setq text (propertize text 'read-only t)))
+                   (when (member 'invisible flags)
+                     (setq text (propertize text 'invisible t)))
                    (goto-char (1+ (car pos)))
                    (if (member 'clickable flags)
                        (insert-text-button

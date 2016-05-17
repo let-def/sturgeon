@@ -1,4 +1,4 @@
-type flag = [`Clickable | `Editable | `Clicked]
+type flag = [`Clickable | `Clicked | `Editable | `Invisible]
 type buffer_shell = name:string -> flag Inuit.pipe -> unit
 
 val buffer_greetings :
