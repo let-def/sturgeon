@@ -402,51 +402,53 @@
          (action `(patch ,rev (,offset . 0) (0 . "") (clicked))))
     (app-sink sink action)))
 
+(defun sturgeon-ui--apply-patch (cursor value)
+  (let* ((buffer    (elt cursor 0))
+         (revisions (elt value 1))
+         (positions (elt value 2))
+         (text      (cdr (elt value 3))) ; check car = length text?
+         (flags     (elt value 4))
+         (offset    (car positions))
+         (oldlen    (cdr positions))
+         (inhibit-read-only t)
+         (sturgeon--active-cursor cursor))
+    (sturgeon--update-revisions cursor revisions)
+    (with-current-buffer buffer
+      (save-excursion
+        (when (> oldlen 0)
+          (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
+           (when (> (cdr pos) 0)
+             (goto-char (1+ (car pos)))
+             (delete-char (cdr pos) nil))))
+        (when (and text (> (length text) 0))
+          (let ((pos (sturgeon--commute-op cursor 'insert offset (length text))))
+           (when (> (cdr pos) 0)
+             (unless (member 'raw flags)
+               (setq text (decode-coding-string text 'utf-8 t)))
+             (unless (member 'editable flags)
+               (setq text (propertize text 'read-only t)))
+             (when (member 'invisible flags)
+               (setq text (propertize text 'invisible t)))
+             (goto-char (1+ (car pos)))
+             (if (member 'clickable flags)
+                 (insert-text-button
+                  text
+                  'action 'sturgeon-ui--cursor-action
+                  'sturgeon-cursor cursor)
+                (insert text)))))))))
+
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
     (setq sturgeon--cursors (cons cursor sturgeon--cursors))
     (make-local-variable 'after-change-functions)
     (add-hook 'after-change-functions 'sturgeon--change-hook)
-
     (lambda-sink value
       (cond
        ((eq (car value) 'ack)
         (let* ((revisions (cadr value)))
           (sturgeon--update-revisions cursor revisions)))
        ((eq (car value) 'patch)
-        (let* ((buffer    (elt cursor 0))
-               (revisions (elt value 1))
-               (positions (elt value 2))
-               (text      (cdr (elt value 3))) ; check car = length text?
-               (flags     (elt value 4))
-               (offset    (car positions))
-               (oldlen    (cdr positions))
-               (inhibit-read-only t)
-               (sturgeon--active-cursor cursor))
-          (sturgeon--update-revisions cursor revisions)
-          (with-current-buffer buffer
-            (save-excursion
-              (when (> oldlen 0)
-                (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
-                 (when (> (cdr pos) 0)
-                   (goto-char (1+ (car pos)))
-                   (delete-char (cdr pos) nil))))
-              (when (and text (> (length text) 0))
-                (let ((pos (sturgeon--commute-op cursor 'insert offset (length text))))
-                 (when (> (cdr pos) 0)
-                   (unless (member 'raw flags)
-                     (setq text (decode-coding-string text 'utf-8 t)))
-                   (unless (member 'editable flags)
-                     (setq text (propertize text 'read-only t)))
-                   (when (member 'invisible flags)
-                     (setq text (propertize text 'invisible t)))
-                   (goto-char (1+ (car pos)))
-                   (if (member 'clickable flags)
-                       (insert-text-button
-                        text
-                        'action 'sturgeon-ui--cursor-action
-                        'sturgeon-cursor cursor)
-                      (insert text)))))))))))))
+        (sturgeon-ui--apply-patch cursor value))))))
 
 (defun sturgeon-ui-handler (value &optional buffer point)
   (let ((cmd (car-safe value)))
