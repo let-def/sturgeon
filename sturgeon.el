@@ -309,6 +309,7 @@
 
 (defvar-local sturgeon--cursors nil)
 (defvar-local sturgeon--revision 0)
+(defvar-local sturgeon--point-moved nil)
 (defconst sturgeon--active-cursor nil)
 
 ;; cursor = [0:buffer 1:sink 2:remote-revision 3:changes 4:latest-remote]
@@ -406,36 +407,47 @@
   (let* ((buffer    (elt cursor 0))
          (revisions (elt value 1))
          (positions (elt value 2))
-         (text      (cdr (elt value 3))) ; check car = length text?
-         (flags     (elt value 4))
+         (content   (elt value 3))
          (offset    (car positions))
          (oldlen    (cdr positions))
+         (newlen    (car content))
+         (text      (cdr content)) ; check newlen = length text?
+         (flags     (elt value 4))
          (inhibit-read-only t)
          (sturgeon--active-cursor cursor))
     (sturgeon--update-revisions cursor revisions)
     (with-current-buffer buffer
-      (save-excursion
-        (when (> oldlen 0)
-          (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
-           (when (> (cdr pos) 0)
-             (goto-char (1+ (car pos)))
-             (delete-char (cdr pos) nil))))
-        (when (and text (> (length text) 0))
-          (let ((pos (sturgeon--commute-op cursor 'insert offset (length text))))
-           (when (> (cdr pos) 0)
-             (unless (member 'raw flags)
-               (setq text (decode-coding-string text 'utf-8 t)))
-             (unless (member 'editable flags)
-               (setq text (propertize text 'read-only t)))
-             (when (member 'invisible flags)
-               (setq text (propertize text 'invisible t)))
-             (goto-char (1+ (car pos)))
-             (if (member 'clickable flags)
-                 (insert-text-button
-                  text
-                  'action 'sturgeon-ui--cursor-action
-                  'sturgeon-cursor cursor)
-                (insert text)))))))))
+      (let ((point-begin (point)))
+        (save-excursion
+          (when (> oldlen 0)
+            (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
+             (when (> (cdr pos) 0)
+               (goto-char (1+ (car pos)))
+               (delete-char (cdr pos) nil))))
+          (when (and text (> (length text) 0))
+            (let ((pos (sturgeon--commute-op cursor 'insert offset (length text))))
+             (when (> (cdr pos) 0)
+               (unless (member 'raw flags)
+                 (setq text (decode-coding-string text 'utf-8 t)))
+               (unless (member 'editable flags)
+                 (setq text (propertize text 'read-only t)))
+               (when (member 'invisible flags)
+                 (setq text (propertize text 'invisible t)))
+               (goto-char (1+ (car pos)))
+               (if (member 'clickable flags)
+                   (insert-text-button
+                    text
+                    'action 'sturgeon-ui--cursor-action
+                    'sturgeon-cursor cursor)
+                  (insert text))))))
+        ;; Heuristic to place point at natural positions
+        (if (not (eq (point) point-begin))
+            (setq sturgeon--point-moved (cons point-begin (point)))
+          (when (eq point-begin (cdr-safe sturgeon--point-moved))
+            (goto-char (min (+ offset newlen) (car-safe sturgeon--point-moved)))
+            (setq sturgeon--point-moved
+                  (cons point-begin (car-safe sturgeon--point-moved)))))
+        ))))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
