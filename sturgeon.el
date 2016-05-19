@@ -310,6 +310,7 @@
 (defvar-local sturgeon--cursors nil)
 (defvar-local sturgeon--revision 0)
 (defvar-local sturgeon--point-moved nil)
+(defvar-local sturgeon--last-point 0)
 (defconst sturgeon--active-cursor nil)
 
 ;; cursor = [0:buffer 1:sink 2:remote-revision 3:changes 4:latest-remote]
@@ -337,7 +338,11 @@
     (aset cursor 4 sturgeon--revision)
     (app-sink (elt cursor 1) action)))
 
-(defun sturgeon--change-hook (beg end len)
+(defun sturgeon--before-change-hook (beg end)
+  (unless sturgeon--active-cursor
+    (setq sturgeon--last-point (point))))
+
+(defun sturgeon--after-change-hook (beg end len)
   (when (and sturgeon--active-cursor
              (eq (elt sturgeon--active-cursor 4) sturgeon--revision))
     (aset sturgeon--active-cursor 4 (1+ sturgeon--revision)))
@@ -440,20 +445,41 @@
                     'action 'sturgeon-ui--cursor-action
                     'sturgeon-cursor cursor)
                   (insert text))))))
-        ;; Heuristic to place point at natural positions
+
+        ;; Heuristics to place point at natural positions
+
+        ;; (message "%d: removed %d inserted %d %S, point %d moved to %d, last user point was %d, last forced move was %d to %d"
+        ;;          (1+ offset) oldlen newlen text point-begin (point)
+        ;;          sturgeon--last-point
+        ;;          (or (car-safe sturgeon--point-moved) 0) (or (cdr-safe sturgeon--point-moved) 0))
+
+        ;; First check: user removed a character that sturgeon reinserted
+        ;;              immediately after
+        (when (and (eq (point) point-begin)
+                   (eq point-begin (1+ offset))
+                   (eq newlen 1)
+                   (eq sturgeon--last-point (1+ point-begin)))
+          ;; (message "MOVE TO %d" sturgeon--last-point)
+          (goto-char sturgeon--last-point))
+
+        ;; Second check: sturgeon reinserted data it had removed at a place
+        ;;               where the cursor was and had to be moved.
         (if (not (eq (point) point-begin))
             (setq sturgeon--point-moved (cons point-begin (point)))
-          (when (eq point-begin (cdr-safe sturgeon--point-moved))
-            (goto-char (min (+ offset newlen) (car-safe sturgeon--point-moved)))
-            (setq sturgeon--point-moved
-                  (cons point-begin (car-safe sturgeon--point-moved)))))
+          (if (eq point-begin (cdr-safe sturgeon--point-moved))
+            (progn
+              (goto-char (min (+ 1 offset newlen) (car-safe sturgeon--point-moved)))
+              (setq sturgeon--point-moved (cons point-begin (car-safe sturgeon--point-moved))))
+            ))
         ))))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
     (setq sturgeon--cursors (cons cursor sturgeon--cursors))
+    (make-local-variable 'before-change-functions)
+    (add-hook 'before-change-functions 'sturgeon--before-change-hook)
     (make-local-variable 'after-change-functions)
-    (add-hook 'after-change-functions 'sturgeon--change-hook)
+    (add-hook 'after-change-functions 'sturgeon--after-change-hook)
     (lambda-sink value
       (cond
        ((eq (car value) 'ack)
