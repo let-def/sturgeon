@@ -1,6 +1,7 @@
 open Sturgeon
 open Session
 open Inuit.Cursor
+open Inuit_widget
 
 let () =
   let fd = Unix.openfile "copycat.log"
@@ -20,19 +21,19 @@ let () =
        incr counter;
        text k' (string_of_int !counter));
   text k "\n";
-  let _ = Inuit_widget.Check.make k in
+  let _ = Check.make k in
   text k " Check me\n";
   text k "Edit me: ";
-  let k' = ref (cursor_of_region Inuit.Region.null) in
-  let _ = Inuit_widget.Edit.make k ~on_change:(fun t ->
-      let str = Inuit_widget.Edit.state t in
+  let k' = ref null in
+  let _ = Edit.make k ~state:"cul" ~on_change:(fun t ->
+      let str = Edit.state t in
       clear !k';
+      text !k' "UPPERCASED: ";
       text !k' str;
     ) in
   text k "\n";
   k' := sub k;
   text k "\n";
   text k "Adjust me: ";
-  let _ = Inuit_widget.Slider.make k in
+  let _ = Slider.make k in
   ()
-
