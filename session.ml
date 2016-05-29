@@ -15,9 +15,9 @@ and t = dual sexp
 let cancel_message = Quit (S "cancel")
 let finalize_message = Quit (S "finalize")
 
-let add_finalizer (dual : t neg) =
-  let finalize f = f finalize_message in
-  Gc.finalise finalize dual
+let add_finalizer (dual : t neg) addr =
+  let finalize _addr = dual finalize_message in
+  Gc.finalise finalize addr
 
 (* Cancel : abort computation, release ressources  *)
 let lower_cancel ?stderr (t : t) : basic =
@@ -147,7 +147,7 @@ let connect
               closed := true;
               stdout (C (S "quit", C (addr, x)))
         in
-        add_finalizer dual;
+        add_finalizer dual addr;
         M (if is_once then Once dual else Sink dual)
       | x -> x
     and inj : void -> t = void
