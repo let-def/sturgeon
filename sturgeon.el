@@ -5,22 +5,42 @@
   (when sturgeon-debug
     (message "%s %S" prefix content)))
 
+(defvar sturgeon--filter-queue 'idle)
+
+(defun sturgeon--filter-action ()
+  ; (message "sturgeon--filter-action")
+  (let ((current-queue (nreverse sturgeon--filter-queue)))
+    (setq sturgeon--filter-queue 'idle)
+    (let ((sturgeon--filter-queue nil)
+          (proc nil) (lines nil))
+      (while current-queue
+        (dolist (item current-queue)
+          (setq proc (car item))
+          (setq lines (split-string (cdr item) "\n"))
+          (unless (cdr lines)
+            (process-put proc 'sturgeon-lines
+                         (cons (car lines) (process-get proc 'sturgeon-lines))))
+          (when (cdr lines)
+            (let ((line (cons (car lines) (process-get proc 'sturgeon-lines))))
+              (setcar lines (apply 'concat (reverse line))))
+            (let ((lines lines))
+              (while (cddr lines) (setq lines (cdr lines)))
+              (process-put proc 'sturgeon-lines (cdr lines))
+              (setcdr lines nil))
+            (with-demoted-errors "reading sturgeon input: %S"
+              (dolist (line lines)
+                (sturgeon--debug ">" line)
+                (sturgeon--handler proc line)))))
+        (accept-process-output)
+        (setq current-queue (nreverse sturgeon--filter-queue))
+        (setq sturgeon--filter-queue nil)))))
+
 (defun sturgeon--filter (proc lines)
-  (setq lines (split-string lines "\n"))
-  (unless (cdr lines)
-    (process-put proc 'sturgeon-lines
-                 (cons (car lines) (process-get proc 'sturgeon-lines))))
-  (when (cdr lines)
-    (let ((line (cons (car lines) (process-get proc 'sturgeon-lines))))
-      (setcar lines (apply 'concat (reverse line))))
-    (let ((lines lines))
-      (while (cddr lines) (setq lines (cdr lines)))
-      (process-put proc 'sturgeon-lines (cdr lines))
-      (setcdr lines nil))
-    (dolist (line lines)
-      (with-demoted-errors "reading sturgeon input: %S"
-        (sturgeon--debug ">" line)
-        (sturgeon--handler proc line)))))
+  (when (eq sturgeon--filter-queue 'idle)
+    (setq sturgeon--filter-queue nil)
+    (run-at-time 0 nil #'sturgeon--filter-action))
+  (setq sturgeon--filter-queue
+        (cons (cons proc lines) sturgeon--filter-queue)))
 
 ;; Routines for working with negations
 
@@ -136,25 +156,29 @@
     (remhash addr weaks)))
 
 (defun sturgeon--collect-roots ()
-  (dolist (process sturgeon--processes)
-    (let* ((roots (process-get process 'sturgeon-roots))
-           (addrs (car roots))
-           (weaks (cdr roots)))
-      (maphash
-       (lambda (addr v)
-         (unless (gethash addr weaks)
-           (remhash addr addrs)
-           (ignore-errors
-             (sturgeon--send process (cons 'quit (cons addr 'finalize))))))
-       addrs))))
+  (setq sturgeon--root-collection nil)
+  (let ((sturgeon--root-collection t))
+    (setq sturgeon--processes
+          (delete-if (lambda (process)
+                       (member (process-status process)
+                               '(exit signal closed failed nil)))
+                     sturgeon--processes))
+    (dolist (process sturgeon--processes)
+      (let* ((roots (process-get process 'sturgeon-roots))
+             (addrs (car roots))
+             (weaks (cdr roots)))
+        (maphash
+         (lambda (addr v)
+           (unless (gethash addr weaks)
+             (remhash addr addrs)
+             (ignore-errors
+               (sturgeon--send process (cons 'quit (cons addr 'finalize))))))
+         addrs)))))
 
 (defun sturgeon--gc-hook ()
-  (setq sturgeon--processes
-        (delete-if (lambda (process)
-                     (member (process-status process)
-                             '(exit signal closed failed nil)))
-                   sturgeon--processes))
-  (run-at-time 0 nil #'sturgeon--collect-roots))
+  (unless sturgeon--root-collection
+    (setq sturgeon--root-collection 'pending)
+    (run-at-time 0 nil #'sturgeon--collect-roots)))
 
 (add-hook 'post-gc-hook 'sturgeon--gc-hook)
 
@@ -241,6 +265,7 @@
          (handler (gethash addr (cdr table)))
          (fn (cdr handler)))
     (when (or (eq 'once (car handler)) (eq msg 'quit))
+      ; (message "REMOVE %S because %S %S" addr (cons (car handler) msg) payload)
       (remhash addr (cdr table)))
     (funcall fn msg payload)))
 
@@ -275,8 +300,7 @@
   (setq command (prin1-to-string command))
   (setq command (replace-regexp-in-string "\n" "\\\\n" command))
   (sturgeon--debug "<" command)
-  (process-send-string process command)
-  (process-send-string process "\n"))
+  (process-send-string process (concat command "\n")))
 
 ;; Main functions
 
@@ -312,6 +336,7 @@
 (defvar-local sturgeon--point-moved nil)
 (defvar-local sturgeon--last-point 0)
 (defconst sturgeon--active-cursor nil)
+(defconst sturgeon--root-collection nil)
 
 ;; cursor = [0:buffer 1:sink 2:remote-revision 3:changes 4:latest-remote]
 (defun sturgeon--change-cursor (cursor beg end len)
@@ -343,9 +368,6 @@
     (setq sturgeon--last-point (point))))
 
 (defun sturgeon--after-change-hook (beg end len)
-  (when (and sturgeon--active-cursor
-             (eq (elt sturgeon--active-cursor 4) sturgeon--revision))
-    (aset sturgeon--active-cursor 4 (1+ sturgeon--revision)))
   (setq sturgeon--revision (1+ sturgeon--revision))
   (dolist (cursor sturgeon--cursors)
     (unless (eq cursor sturgeon--active-cursor)
@@ -372,7 +394,7 @@
     (let* ((k1 (elt op1 1))
            (s1 (elt op1 2))
            (l1 (elt op1 3)))
-      (message "commuting %S %S" k1 k2)
+      ; (message "commuting %S %S" k1 k2)
       (cond
        ((and (eq k1 'remove) (eq k2 'remove))
         (let ((e2 (sturgeon--remap s1 l1 (+ s2 l2))))
@@ -396,7 +418,7 @@
           (setq s2 (+ s2 l1))))
 
        (t
-         (message "k1:%S k2:%S" k1 k2)
+         (message "sturgeon--commute-op: k1:%S k2:%S" k1 k2)
          (assert nil)))))
   (cons s2 l2))
 
@@ -475,24 +497,25 @@
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
-    (setq sturgeon--cursors (cons cursor sturgeon--cursors))
-    (make-local-variable 'before-change-functions)
-    (add-hook 'before-change-functions 'sturgeon--before-change-hook)
-    (make-local-variable 'after-change-functions)
-    (add-hook 'after-change-functions 'sturgeon--after-change-hook)
-    (lambda-sink value
-      (cond
-       ((eq (car value) 'ack)
-        (let* ((revisions (cadr value)))
-          (sturgeon--update-revisions cursor revisions)))
-       ((eq (car value) 'patch)
-        (sturgeon-ui--apply-patch cursor value))))))
+    (with-current-buffer buffer
+      (setq sturgeon--cursors (cons cursor sturgeon--cursors))
+      (make-local-variable 'before-change-functions)
+      (add-hook 'before-change-functions 'sturgeon--before-change-hook)
+      (make-local-variable 'after-change-functions)
+      (add-hook 'after-change-functions 'sturgeon--after-change-hook)
+      (lambda-sink value
+        (cond
+         ((eq (car value) 'ack)
+          (let* ((revisions (cadr value)))
+            (sturgeon--update-revisions cursor revisions)))
+         ((eq (car value) 'patch)
+          (sturgeon-ui--apply-patch cursor value)))))))
 
 (defun sturgeon-ui-handler (value &optional buffer point)
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
            (let* ((name (cadr value))
-                  (buffer (if (not buffer)
+                  (buffer (if (or (not buffer) sturgeon--cursors)
                               (get-buffer-create (generate-new-buffer-name name))
                             (with-current-buffer buffer
                               (rename-buffer name t)
