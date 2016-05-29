@@ -59,7 +59,6 @@ let accept server =
         Mutex.unlock olock;
       with exn ->
         Mutex.unlock olock;
-        raise exn
     in
     let greetings, cogreetings = server.client () in
     let received, status = Session.connect ?greetings ?cogreetings send in
