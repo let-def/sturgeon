@@ -189,7 +189,7 @@ module Remote_pipe = struct
     } in
     let t = { commands; revisions = []; rev_tail = [];
               remote = 0; latest_remote = 0; local = 0 } in
-    let pipe = Inuit.Pipe.make ~change:(local_change t) in
+    let pipe = Inuit.Pipe.make (local_change t) in
     let handler = M (Sink (function
         | Feed (C (S "sink", M (Sink sink))) ->
           (*Printf.eprintf "GOT SINK!\n";*)
@@ -214,7 +214,7 @@ module Remote_pipe = struct
             | (offset, replace) ->
               let flags = flags_of_sexp flags in
               (* Check sexp new_len = patch.new_len *)
-              Inuit.Pipe.commit pipe
+              Inuit.Pipe.send pipe
                 (Inuit.Patch.make ~offset ~replace flags text)
           end
         | Feed r ->
@@ -233,7 +233,7 @@ type shell_status =
   | Pending of Session.t list
   | Connected of Session.t Session.neg
 
-type buffer_shell = name:string -> flag Inuit.pipe -> unit
+type buffer_shell = name:string -> flag Inuit.patch Inuit.pipe -> unit
 
 let buffer_greetings () =
   let status = ref (Pending []) in
