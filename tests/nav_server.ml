@@ -4,13 +4,6 @@ open Inuit.Cursor
 open Inuit_widget
 
 let () =
-  let fd = Unix.openfile "sturgeon.log"
-      [Unix.O_CREAT; Unix.O_TRUNC; Unix.O_WRONLY] 0o660
-  in
-  Unix.dup2 fd Unix.stderr;
-  Unix.close fd
-
-let () =
   Recipes.text_command @@ fun ~args shell ->
   Session.cancel args;
   let k = Stui.create_cursor shell ~name:"nav-server" in

@@ -359,7 +359,7 @@
                   (cons (elt cursor 2) sturgeon--revision)
                   (cons beg len)
                   (cons (length text) text)
-                  nil)))
+                  (cons 'editable nil))))
     (aset cursor 4 sturgeon--revision)
     (app-sink (elt cursor 1) action)))
 

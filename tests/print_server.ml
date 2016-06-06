@@ -4,13 +4,6 @@ open Inuit.Cursor
 open Inuit_widget
 
 let () =
-  let fd = Unix.openfile "copycat.log"
-      [Unix.O_CREAT; Unix.O_TRUNC; Unix.O_WRONLY] 0o660
-  in
-  Unix.dup2 fd Unix.stderr;
-  Unix.close fd
-
-let () =
   Recipes.text_command @@ fun ~args:_ shell ->
   let k = Stui.create_cursor shell ~name:"print-server" in
   text k "Hi, how are you doing?\n";
@@ -25,7 +18,7 @@ let () =
   text k " Check me\n";
   text k "Edit me: ";
   let k' = ref null in
-  let _ = Edit.make k ~state:"cul" ~on_change:(fun t ->
+  let _ = Edit.make k ~state:" " ~on_change:(fun t ->
       let str = Edit.state t in
       clear !k';
       text !k' "UPPERCASED: ";

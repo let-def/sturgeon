@@ -6,8 +6,8 @@ type buffer_shell
 val buffer_greetings :
   unit -> Session.t * buffer_shell
 
-val create_buffer : buffer_shell -> name:string -> flag patch pipe -> unit
+val create_buffer : buffer_shell -> name:string -> flag patch socket -> unit
 val create_cursor : buffer_shell -> name:string -> flag cursor
 
-val accept_buffer : Session.t -> flag patch pipe -> unit
+val accept_buffer : Session.t -> flag patch socket -> unit
 val accept_cursor : Session.t -> flag cursor

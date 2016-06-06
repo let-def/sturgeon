@@ -1,7 +1,6 @@
 open Sturgeon
-open Sexp
 open Session
-open Textbuf
+open Inuit
 
 let new_cp c = Char.code c land 0xC0 <> 0x80
 
@@ -28,36 +27,39 @@ let apply_change =
 
 let clients = ref []
 
+let lock = Mutex.create ()
 let client_change client patch =
-  List.iter (fun client' ->
-      if client != client' then
-        Inuit.Pipe.commit client' patch
-    ) !clients
+  Mutex.lock lock;
+  prerr_endline "change";
+  match
+    apply_change patch;
+    List.iter (fun client' ->
+        if client != client' then
+          Inuit.Socket.send client' patch
+      ) !clients
+  with
+  | () -> Mutex.unlock lock
+  | exception exn -> Mutex.unlock lock; raise exn
 
 let () =
   ignore (Sys.signal Sys.sigpipe Sys.Signal_ignore);
   let open Sexp in
-  let hub = ref [] in
-  let lock = Mutex.create () in
-  let server = Recipes.server ~cogreetings:(fun arg ->
-      Mutex.lock lock;
-      match
-        begin match arg with
-          | C (S "textbuf", C (session, args)) ->
-            let a, set_title = Stui.accept_textbuf session in
-            set_title "test";
-            Textbuf.change a (Textbuf.text ~flags:[`Editable] 0 0 !buffer);
-            let b = new client hub in
-            Textbuf.connect ~a ~b
-          | sexp -> Session.cancel sexp
-        end
-      with
-      | x -> Mutex.unlock lock; x
-      | exception exn -> Mutex.unlock lock; raise exn
-    ) "sync"
+  let socket_connect t () =
+    prerr_endline "Client connected";
+    Socket.send t (Patch.make ~offset:0 [`Editable] !buffer);
+    Socket.set_receive t (client_change t);
+    clients := t :: !clients
+  in
+  let socket_close t () =
+    prerr_endline "Client disconnected";
+    clients := List.filter ((!=) t) !clients
+  in
+  let server = Recipes.text_server "sync-text" (fun ~args shell ->
+      prerr_endline "New client";
+      let socket = Inuit.Socket.make ~receive:ignore in
+      Socket.set_on_connected socket (socket_connect socket);
+      Socket.set_on_closed socket (socket_close socket);
+      Stui.create_buffer shell ~name:"test" (Socket.endpoint socket)
+    )
   in
   Recipes.main_loop server
-  (*let rec loop () =
-      Lwt.bind (Recipes.accept server) loop
-    in
-    Lwt_main.run (loop ())*)

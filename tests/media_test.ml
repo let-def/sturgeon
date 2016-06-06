@@ -3,13 +3,6 @@ open Session
 open Inuit.Cursor
 open Inuit_widget
 
-let () =
-  let fd = Unix.openfile "copycat.log"
-      [Unix.O_CREAT; Unix.O_TRUNC; Unix.O_WRONLY] 0o660
-  in
-  Unix.dup2 fd Unix.stderr;
-  Unix.close fd
-
 let word = Str.regexp "[-_a-zA-Z][-_a-zA-Z][-_a-zA-Z]+"
 
 let extract_words str =
