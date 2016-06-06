@@ -13,6 +13,7 @@
     (setq sturgeon--filter-queue 'idle)
     (let ((sturgeon--filter-queue nil)
           (proc nil) (lines nil))
+      (accept-process-output)
       (while current-queue
         (dolist (item current-queue)
           (setq proc (car item))
@@ -31,7 +32,6 @@
               (dolist (line lines)
                 (sturgeon--debug ">" line)
                 (sturgeon--handler proc line)))))
-        (accept-process-output)
         (setq current-queue (nreverse sturgeon--filter-queue))
         (setq sturgeon--filter-queue nil)))))
 
