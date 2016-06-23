@@ -6,4 +6,4 @@ true : bin_annot, safe_string, package(bytes), package(inuit)
 <src> : include
 <test> : include
 
-<test/inuit_*.*> : include, thread
+<test/inuit_*.*> : include, thread, package(str)

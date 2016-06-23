@@ -20,8 +20,8 @@ let apply_change =
   let change s patch =
     let open Inuit.Patch in
     let pos1 = find_pos s patch.offset 0 in
-    let pos2 = find_pos s patch.old_len pos1 in
-    String.sub s 0 pos1 ^ patch.text ^ String.sub s pos2 (String.length s - pos2)
+    let pos2 = find_pos s (Patch.removed patch) pos1 in
+    String.sub s 0 pos1 ^ Patch.inserted_text patch ^ String.sub s pos2 (String.length s - pos2)
   in
   fun txt -> buffer := change !buffer txt
 
@@ -46,7 +46,7 @@ let () =
   let open Sexp in
   let socket_connect t () =
     prerr_endline "Client connected";
-    Socket.send t (Patch.make ~offset:0 [`Editable] !buffer);
+    Socket.send t (Patch.make ~offset:0 [`Editable] (Patch.Insert !buffer));
     Socket.set_receive t (client_change t);
     clients := t :: !clients
   in

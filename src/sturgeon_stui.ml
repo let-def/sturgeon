@@ -36,21 +36,43 @@ let flags_of_sexp sexp =
   in
   aux [] sexp
 
+let sexp_of_operation text_len = function
+  | Patch.Propertize n ->
+    C (S "propertize", I n)
+  | Patch.Remove n ->
+    C (S "remove", I n)
+  | Patch.Insert text ->
+    let text = C (T text, I text_len) in
+    C (S "insert", text)
+  | Patch.Replace (n, text) ->
+    let text = C (T text, I text_len) in
+    C (S "replace", C (I n, text))
+
 let sexp_of_remote_patch = function
-  | Remote.Patch (rev, {Patch. offset; old_len; new_len; text; flags}) ->
-    let region = C (I offset, I old_len) and new_txt = C (I new_len, T text) in
-    let patch = C (region, C (new_txt, C (sexp_of_flags flags, sym_nil))) in
+  | Remote.Patch (rev, {Patch. offset; operation; text_len; flags}) ->
+    let operation = sexp_of_operation text_len operation in
+    let patch = C (I offset, C (operation, C (sexp_of_flags flags, sym_nil))) in
     C (S "patch", C (sexp_of_revision rev, patch))
   | Remote.Ack rev ->
     C (S "ack", C (sexp_of_revision rev, sym_nil))
 
+let operation_of_sexp = function
+  | C (S "propertize", I n) -> (0, Patch.Propertize n)
+  | C (S "remove", I n) -> (0, Patch.Remove n)
+  | C (S "insert", C (T text, I text_len)) ->
+      (text_len, Patch.Insert text)
+  | C (S "replace", C (I n, C (T text, I text_len))) ->
+      (text_len, Patch.Replace (n, text))
+  | sexp -> failwith ("operation_of_sexp: cannot parse " ^ dump_sexp sexp)
+
 let remote_patch_of_sexp = function
   | C (S "ack", C (revision, S "nil")) ->
     Remote.Ack (revision_of_sexp revision)
-  | C (S "patch", C (revision, C (C (I offset, I replace),
-                                  C (C (I new_len, T text),
-                                     C (flags, S "nil"))))) ->
-    let patch = Patch.make ~offset ~replace (flags_of_sexp flags) text in
+  | C (S "patch",
+       C (revision, C (I offset, C (operation, C (flags, S "nil"))))) ->
+    let _text_len, operation = operation_of_sexp operation in
+    let patch = Patch.make ~offset (flags_of_sexp flags) operation in
+    (* FIXME: check _text_len = patch.Patch.text_len *)
     Remote.Patch ((revision_of_sexp revision), patch)
   | sexp -> failwith ("remote_patch_of_sexp: cannot parse " ^ dump_sexp sexp)
 

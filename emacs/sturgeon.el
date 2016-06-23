@@ -274,7 +274,7 @@
   (let ((cmd (car-safe answer))
         (payload (cdr-safe answer)))
     (cond
-     ((and (eq cmd 'greetings) (eq 1 (car-safe payload)))
+     ((and (eq cmd 'greetings) (equal 1 (car-safe payload)))
       (with-demoted-errors "greetings %S"
         (let ((cogreetings (process-get process 'sturgeon-cogreetings)))
           (if (not cogreetings)
@@ -344,10 +344,10 @@
   (setq end (1- end))
   ;; Record changes
   (let ((changes (elt cursor 3)))
-    (unless (eq len 0)
+    (unless (equal len 0)
       (setq changes
             (cons (vector sturgeon--revision 'remove beg len) changes)))
-    (unless (eq beg end)
+    (unless (equal beg end)
       (setq changes
             (cons (vector sturgeon--revision 'insert beg (- end beg)) changes)))
     (aset cursor 3 changes))
@@ -355,11 +355,17 @@
   (let* ((text (encode-coding-string
                 (buffer-substring-no-properties (1+ beg) (1+ end))
                 'utf-8 t))
+         (op (cond
+              ((equal (length text) 0)
+               (cons 'replace len))
+              ((equal len 0)
+               (cons 'insert (cons (length text) text)))
+              (t
+               (cons 'replace (cons len (cons (length text) text))))))
          (action (list 'patch
-                  (cons (elt cursor 2) sturgeon--revision)
-                  (cons beg len)
-                  (cons (length text) text)
-                  (cons 'editable nil))))
+                       (cons (elt cursor 2) sturgeon--revision)
+                       (cons beg op)
+                       (cons 'editable nil))))
     (aset cursor 4 sturgeon--revision)
     (app-sink (elt cursor 1) action)))
 
@@ -427,73 +433,84 @@
          (sink   (elt cursor 1))
          (rev    (cons (elt cursor 2) sturgeon--revision))
          (offset (1- (marker-position x)))
-         (action `(patch ,rev (,offset . 0) (0 . "") (clicked))))
+         (action `(patch ,rev ,offset (propertize . 0) (clicked))))
     (app-sink sink action)))
+
+(defun sturgeon-ui--substitute (cursor offset oldlen text newlen flags)
+ (let ((point-begin (point))
+       (inhibit-read-only t)
+       (sturgeon--active-cursor cursor))
+   (save-excursion
+     (when (> oldlen 0)
+       (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
+        (when (> (cdr pos) 0)
+          (goto-char (1+ (car pos)))
+          (delete-char (cdr pos) nil))))
+     (when (and text (> (length text) 0))
+       (let ((pos (sturgeon--commute-op cursor 'insert offset (length text))))
+        (when (> (cdr pos) 0)
+          (unless (member 'raw flags)
+            (setq text (decode-coding-string text 'utf-8 t)))
+          (unless (member 'editable flags)
+            (setq text (propertize text 'read-only t)))
+          (when (member 'invisible flags)
+            (setq text (propertize text 'invisible t)))
+          (goto-char (1+ (car pos)))
+          (if (member 'clickable flags)
+              (insert-text-button
+               text
+               'action 'sturgeon-ui--cursor-action
+               'sturgeon-cursor cursor)
+             (insert text))))))
+
+   ;; Heuristics to place point at natural positions
+
+   ;; (message "%d: removed %d inserted %d %S, point %d moved to %d, last user point was %d, last forced move was %d to %d"
+   ;;          (1+ offset) oldlen newlen text point-begin (point)
+   ;;          sturgeon--last-point
+   ;;          (or (car-safe sturgeon--point-moved) 0) (or (cdr-safe sturgeon--point-moved) 0))
+
+   ;; First check: user removed a character that sturgeon reinserted
+   ;;              immediately after
+   (when (and (equal (point) point-begin)
+              (equal point-begin (1+ offset))
+              (equal newlen 1)
+              (equal sturgeon--last-point (1+ point-begin)))
+     ;; (message "MOVE TO %d" sturgeon--last-point)
+     (goto-char sturgeon--last-point))
+
+   ;; Second check: sturgeon reinserted data it had removed at a place
+   ;;               where the cursor was and had to be moved.
+   (if (not (equal (point) point-begin))
+       (setq sturgeon--point-moved (cons point-begin (point)))
+     (if (equal point-begin (cdr-safe sturgeon--point-moved))
+       (progn
+         (goto-char (min (+ 1 offset newlen) (car-safe sturgeon--point-moved)))
+         (setq sturgeon--point-moved (cons point-begin (car-safe sturgeon--point-moved))))
+       ))
+   ))
 
 (defun sturgeon-ui--apply-patch (cursor value)
   (let* ((buffer    (elt cursor 0))
          (revisions (elt value 1))
-         (positions (elt value 2))
-         (content   (elt value 3))
-         (offset    (car positions))
-         (oldlen    (cdr positions))
-         (newlen    (car content))
-         (text      (cdr content)) ; check newlen = length text?
-         (flags     (elt value 4))
-         (inhibit-read-only t)
-         (sturgeon--active-cursor cursor))
+         (offset    (elt value 2))
+         (operation (elt value 3))
+         (kind      (car operation))
+         (flags     (elt value 4)))
     (sturgeon--update-revisions cursor revisions)
     (with-current-buffer buffer
-      (let ((point-begin (point)))
-        (save-excursion
-          (when (> oldlen 0)
-            (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
-             (when (> (cdr pos) 0)
-               (goto-char (1+ (car pos)))
-               (delete-char (cdr pos) nil))))
-          (when (and text (> (length text) 0))
-            (let ((pos (sturgeon--commute-op cursor 'insert offset (length text))))
-             (when (> (cdr pos) 0)
-               (unless (member 'raw flags)
-                 (setq text (decode-coding-string text 'utf-8 t)))
-               (unless (member 'editable flags)
-                 (setq text (propertize text 'read-only t)))
-               (when (member 'invisible flags)
-                 (setq text (propertize text 'invisible t)))
-               (goto-char (1+ (car pos)))
-               (if (member 'clickable flags)
-                   (insert-text-button
-                    text
-                    'action 'sturgeon-ui--cursor-action
-                    'sturgeon-cursor cursor)
-                  (insert text))))))
-
-        ;; Heuristics to place point at natural positions
-
-        ;; (message "%d: removed %d inserted %d %S, point %d moved to %d, last user point was %d, last forced move was %d to %d"
-        ;;          (1+ offset) oldlen newlen text point-begin (point)
-        ;;          sturgeon--last-point
-        ;;          (or (car-safe sturgeon--point-moved) 0) (or (cdr-safe sturgeon--point-moved) 0))
-
-        ;; First check: user removed a character that sturgeon reinserted
-        ;;              immediately after
-        (when (and (eq (point) point-begin)
-                   (eq point-begin (1+ offset))
-                   (eq newlen 1)
-                   (eq sturgeon--last-point (1+ point-begin)))
-          ;; (message "MOVE TO %d" sturgeon--last-point)
-          (goto-char sturgeon--last-point))
-
-        ;; Second check: sturgeon reinserted data it had removed at a place
-        ;;               where the cursor was and had to be moved.
-        (if (not (eq (point) point-begin))
-            (setq sturgeon--point-moved (cons point-begin (point)))
-          (if (eq point-begin (cdr-safe sturgeon--point-moved))
-            (progn
-              (goto-char (min (+ 1 offset newlen) (car-safe sturgeon--point-moved)))
-              (setq sturgeon--point-moved (cons point-begin (car-safe sturgeon--point-moved))))
-            ))
-        ))))
+      (cond
+        ((eq kind 'propertize)
+         nil) ;; TODO
+        ((eq kind 'remove)
+         (sturgeon-ui--substitute cursor offset (cdr operation) "" 0 flags))
+        ((eq kind 'insert)
+         (sturgeon-ui--substitute cursor offset 0
+                                  (cadr operation) (cddr operation) flags))
+        ((eq kind 'replace)
+         (sturgeon-ui--substitute cursor offset (cadr operation)
+                                  (caddr operation) (cdddr operation) flags))
+      ))))
 
 (defun sturgeon-ui--make-cursor (buffer point sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
