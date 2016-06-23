@@ -44,7 +44,7 @@ type buffer_shell
     Send the session as a greetings to emacs instance and the shell will
     open and display buffers in this instance. *)
 val buffer_greetings :
-  unit -> Session.t * buffer_shell
+  unit -> Sturgeon_session.t * buffer_shell
 
 (** Create patch socket (low-level) from a shell. *)
 val create_buffer : buffer_shell -> name:string -> flag patch socket -> unit
@@ -53,5 +53,5 @@ val create_buffer : buffer_shell -> name:string -> flag patch socket -> unit
 val create_cursor : buffer_shell -> name:string -> flag cursor
 
 (** FIXME: Document other protocols *)
-val accept_buffer : Session.t -> flag patch socket -> unit
-val accept_cursor : Session.t -> flag cursor
+val accept_buffer : Sturgeon_session.t -> flag patch socket -> unit
+val accept_cursor : Sturgeon_session.t -> flag cursor

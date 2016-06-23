@@ -1,4 +1,4 @@
-open Sexp
+open Sturgeon_sexp
 
 type 'a result =
   | Feed of 'a

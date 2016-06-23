@@ -76,10 +76,11 @@ let escaped s =
   done;
   if !count = 0 then s
   else
+    let s = Bytes.unsafe_of_string s in
     let s' = Bytes.create (len + !count) in
     let j = ref 0 in
     for i = 0 to len - 1 do
-      match s.[i] with
+      match Bytes.get s i with
       | '"' | '\\' as c ->
         Bytes.set s' (!j + 0) '\\';
         Bytes.set s' (!j + 1) c;
@@ -99,7 +100,7 @@ let escaped s =
         Bytes.set s' !j c;
         incr j
     done;
-    s'
+    Bytes.unsafe_to_string s'
 
 let rec tell_sexp (tell : _ -> unit) sexp =
   match sexp with
@@ -280,7 +281,8 @@ let of_file_descr ~on_read fd =
           if read = 0 then '\000'
           else
             begin
-              getch := getch_of_substring buffer 0 read;
+              getch := getch_of_substring
+                  (Bytes.unsafe_to_string buffer) 0 read;
               !getch ()
             end
         | c -> c
@@ -307,7 +309,8 @@ let of_channel ic =
           if read = 0 then '\000'
           else
             begin
-              getch := getch_of_substring buffer 0 read;
+              getch := getch_of_substring
+                  (Bytes.unsafe_to_string buffer) 0 read;
               !getch ()
             end
         | c -> c

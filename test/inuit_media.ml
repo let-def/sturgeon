@@ -15,7 +15,7 @@ let extract_words str =
   List.rev (search [] 0)
 
 let () =
-  Recipes.text_command @@ fun ~args:_ shell ->
+  Sturgeon_recipes_command.text_command @@ fun ~args:_ shell ->
   let k = Stui.create_cursor shell ~name:"spotifouille" in
   text k " Recherche: ";
   let k' = ref null in

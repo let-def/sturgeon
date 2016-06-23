@@ -4,7 +4,7 @@ open Inuit.Cursor
 open Inuit_widget
 
 let () =
-  Recipes.text_command @@ fun ~args shell ->
+  Sturgeon_recipes_command.text_command @@ fun ~args shell ->
   Session.cancel args;
   let k = Stui.create_cursor shell ~name:"nav-server" in
   let nav =

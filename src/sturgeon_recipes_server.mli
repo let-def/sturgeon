@@ -25,14 +25,9 @@
 
 )* }}} *)
 
-(** FIXME: A few high-level entry points for sessions. *)
+(** WIP A few high-level entry points for session servers. *)
 
-val command :
-  ?greetings:Session.t ->
-  ?cogreetings:(Session.t -> unit) ->
-  unit -> 'a
-
-val text_command : (args:Session.t -> Stui.buffer_shell -> unit) -> 'a
+open Sturgeon
 
 type server
 

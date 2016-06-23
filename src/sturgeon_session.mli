@@ -25,7 +25,7 @@
 
 )* }}} *)
 
-open Sexp
+open Sturgeon_sexp
 
 (** Session extends S-exp with abstract objects.
     One can now put function-like values inside s-expressions.

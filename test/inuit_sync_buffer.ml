@@ -54,7 +54,7 @@ let () =
     prerr_endline "Client disconnected";
     clients := List.filter ((!=) t) !clients
   in
-  let server = Recipes.text_server "sync-text" (fun ~args shell ->
+  let server = Sturgeon_recipes_server.text_server "sync-text" (fun ~args shell ->
       prerr_endline "New client";
       let socket = Inuit.Socket.make ~receive:ignore in
       Socket.set_on_connected socket (socket_connect socket);
@@ -62,4 +62,4 @@ let () =
       Stui.create_buffer shell ~name:"test" (Socket.endpoint socket)
     )
   in
-  Recipes.main_loop server
+  Sturgeon_recipes_server.main_loop server

@@ -1,14 +1,12 @@
-open Sexp
-open Session
+open Sturgeon_sexp
+open Sturgeon_session
 open Inuit
-
-module Remote = Inuit_remote
 
 type flag = [`Clickable | `Clicked | `Editable | `Invisible]
 
 let dump_sexp sexp =
   let inj _ = S "<abstract>" and map x = x in
-  Sexp.to_string (Sexp.transform_cons ~inj ~map sexp)
+  to_string (transform_cons ~inj ~map sexp)
 
 let sexp_of_revision {Remote. remote; local} =
   C (I remote, I local)
@@ -84,8 +82,8 @@ type buffer_shell = {
 }
 
 type shell_status =
-  | Pending of Session.t list
-  | Connected of Session.t Session.neg
+  | Pending of Sturgeon_session.t list
+  | Connected of Sturgeon_session.t neg
 
 let buffer_greetings () =
   let status = ref (Pending []) in

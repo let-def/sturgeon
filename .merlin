@@ -1,1 +1,5 @@
-PKG inuit
+PKG bytes inuit
+S src
+S test
+B _build/**
+B +threads

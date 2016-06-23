@@ -4,7 +4,7 @@ open Inuit.Cursor
 open Inuit_widget
 
 let () =
-  Recipes.text_command @@ fun ~args:_ shell ->
+  Sturgeon_recipes_command.text_command @@ fun ~args:_ shell ->
   let k = Stui.create_cursor shell ~name:"print-server" in
   text k "Hi, how are you doing?\n";
   let counter = ref 0 in

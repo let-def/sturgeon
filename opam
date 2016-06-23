@@ -1,18 +1,19 @@
 opam-version: "1.2"
-name: "sturgeon"
-version: "0.1"
-maintainer: "Frederic Bour <frederic.bour@lakaban.net>"
-authors: "Frederic Bour <frederic.bour@lakaban.net>"
-homepage: "https://github.com/def-lkb/sturgeon"
-bug-reports: "https://github.com/def-lkb/sturgeon"
-license: "MIT"
-dev-repo: "https://github.com/def-lkb/sturgeon.git"
-build: [
-  [make]
-]
-install: [make "install"]
-remove: ["ocamlfind" "remove" "sturgeon"]
+maintainer: "Frédéric Bour <frederic.bour@lakaban.net>"
+authors: ["Frédéric Bour <frederic.bour@lakaban.net>"]
+homepage: "https://github.com/let-def/sturgeon"
+doc: "https://let-def.github.io/sturgeon/doc"
+license: "ISC"
+dev-repo: "https://github.com/let-def/sturgeon.git"
+bug-reports: "https://github.com/let-def/sturgeon/issues"
+tags: []
+available: [ ocaml-version >= "4.01.0"]
 depends: [
   "ocamlfind" {build}
-  "inuit"
+  "ocamlbuild" {build}
+  "topkg" {build}
 ]
+depopts: []
+build:
+[[ "ocaml" "pkg/pkg.ml" "build"
+           "--pinned" "%{pinned}%" ]]

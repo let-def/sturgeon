@@ -12,7 +12,7 @@ let rec children prefix t =
   done
 
 let () =
-  Recipes.text_command
+  Sturgeon_recipes_command.text_command
   @@ fun ~args shell ->
   let cursor = Stui.create_cursor shell ~name:"tree-server" in
   let nav =
