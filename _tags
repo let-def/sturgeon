@@ -1,6 +1,7 @@
 true : bin_annot, safe_string, package(bytes), package(inuit)
 
 <src/sturgeon_recipes_server.*> : thread
+<src/sturgeon_connector.*> : package(unix)
 
 <src> : include
 <test> : include
