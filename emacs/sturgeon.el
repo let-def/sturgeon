@@ -1,50 +1,118 @@
+;; Sturgeon implementation in Emacs.
+;;
+;; Naming convention
+;;
+;; By convention, all variables of the form sturgeon-... are targeted to users
+;; of ;; the library while variables prefixed by sturgeon-- are internal to the
+;; library: they might disappear or be changed without further notice.
+;;
+
 (defcustom sturgeon-debug nil
-  "Dump I/O to message buffer")
+  "If non-nil, every message, received or sent, will be dumped to *Message* buffer")
 
 (defun sturgeon--debug (prefix content)
+  "If `sturgeon-debug' is set, dump prefix and content to *Message* buffer"
   (when sturgeon-debug
     (message "%s %S" prefix content)))
 
-(defvar sturgeon--filter-queue 'idle)
+(defvar sturgeon--filter-queue 'idle
+  "Queue is filled with messages received from the process, and an
+asynchonous handler pump and dispatch them.
+Valid values are 'idle or a list of a (process . line) pair.
+'idle means that no handler is running yet, so it should be spawned first.
+List is the queue of waiting messages.  New ones should be prepended.
+")
 
 (defun sturgeon--filter-action ()
-  ; (message "sturgeon--filter-action")
+  "The message handler. It pump and dispatches messages from the queue."
   (let ((current-queue (nreverse sturgeon--filter-queue)))
     (setq sturgeon--filter-queue 'idle)
     (let ((sturgeon--filter-queue nil)
           (proc nil) (lines nil))
+      ;; Heuristic to make the interface responsive: accepting process output
+      ;; now will fill the queue with buffered messages.  This is more
+      ;; efficient than starting a new handler for each message and prevent
+      ;; interfaces from flickering.
+      ;; However, processing too many messages risk freezing the interfaces.
+      ;; Hence it is called only once, before entering the dispatch loop.
       (accept-process-output)
       (while current-queue
+        ;; Pump loop
         (dolist (item current-queue)
           (setq proc (car item))
+          ;; Logic for concatening partial s-expressions,
+          ;;
           (setq lines (split-string (cdr item) "\n"))
-          (unless (cdr lines)
-            (process-put proc 'sturgeon-lines
-                         (cons (car lines) (process-get proc 'sturgeon-lines))))
-          (when (cdr lines)
+          (if (not (cdr lines))
+              ;; Line is incomplete, append the chunk it to buffered prefix
+              (process-put proc 'sturgeon-lines
+                           (cons (car lines) (process-get proc 'sturgeon-lines)))
+            ;; One or more lines were received
             (let ((line (cons (car lines) (process-get proc 'sturgeon-lines))))
+              ;; Flush buffered prefix
               (setcar lines (apply 'concat (reverse line))))
             (let ((lines lines))
+              ;; Put back last (unterminated or empty) chunk to buffered prefix
               (while (cddr lines) (setq lines (cdr lines)))
               (process-put proc 'sturgeon-lines (cdr lines))
               (setcdr lines nil))
+            ;; Dispatch lines to user handler
             (with-demoted-errors "reading sturgeon input: %S"
               (dolist (line lines)
                 (sturgeon--debug ">" line)
                 (sturgeon--handler proc line)))))
+        ;; Pump messages that got queued during the loop
         (setq current-queue (nreverse sturgeon--filter-queue))
         (setq sturgeon--filter-queue nil)))))
 
 (defun sturgeon--filter (proc lines)
+  "Sturgeon process filter: start asynchonous handler if needed, queue lines."
   (when (eq sturgeon--filter-queue 'idle)
     (setq sturgeon--filter-queue nil)
     (run-at-time 0 nil #'sturgeon--filter-action))
   (setq sturgeon--filter-queue
         (cons (cons proc lines) sturgeon--filter-queue)))
 
-;; Routines for working with negations
+;; Routines and macros that help implementing sturgeon negations.
+;;
+;; To implement a <once> or a <sink>, one can use some macros:
+;;   (lambda-once parameter-name
+;;      body)
+;;   (lambda-sink parameter-name
+;;      body)
+;;
+;; These behave like `lambda', except only a single name can be bound.
+;; They wrap body with some validation and dispatch logic.
+;;
+;; An extended form is accepted, to handle corner cases:
+;;   (lambda-sink v
+;;      'quit
+;;      (quit-body
+;;          ;; v is bound to error message
+;;      )
+;;      body)
+;;
+;; Examples:
+;;
+;; (lambda-once v
+;;    (message "remote sent value %S" v)
+;;    (sturgeon-cancel v) ; we aren't doing anything with v,
+;;                        ; let's release any sub-sessions asap
+;;    )
+;;
+;; (lambda-once v
+;;    'quit
+;;    (if (eq v 'finalize)
+;;        (message "once was collected before getting an answer")
+;;      (message "once failed with message: %S" v))
+;;
+;;    (message "remote sent value %S" v)
+;;    (sturgeon-cancel v)
+;;    )
+;;
 
 (defun sturgeon--lambda-extract-handlers (body)
+  "Extract other special cases from body, e.g. 'quit (quit-body)"
   (let ((handlers nil) (iter body))
     (while (symbolp (car iter))
       (setq handlers (cons
@@ -54,6 +122,7 @@
     (cons handlers iter)))
 
 (defmacro lambda-once (var &rest body)
+  "A macro like emacs-lisp lambda but for once values. See sturgeon.el for documentation, or contribute better emacs-lisp doc thanks you :)"
   (let ((handlers (sturgeon--lambda-extract-handlers body)))
     (setq body (cdr handlers))
     (setq handlers (car handlers))
@@ -68,6 +137,7 @@
                       (sturgeon-cancel ,var)))))))
 
 (defmacro lambda-sink (var &rest body)
+  "A macro like emacs-lisp lambda but for sink values. See sturgeon.el for documentation, or contribute better emacs-lisp doc thanks you :)"
   (let ((handlers (sturgeon--lambda-extract-handlers body)))
     (setq body (cdr handlers))
     (setq handlers (car handlers))
@@ -86,6 +156,7 @@
                     (sturgeon-cancel sturgeon-values)))))))
 
 (defmacro lambda-batch (var &rest body)
+  "Don't use: WIP for receiving many values at once, might be removed in the future."
   (let ((handlers (sturgeon--lambda-extract-handlers body)))
     (setq body (cdr handlers))
     (setq handlers (car handlers))
@@ -106,38 +177,62 @@
 (put 'lambda-batch 'lisp-indent-function 'defun)
 
 (defun sturgeon--app-p (sexp)
+  "Assertion validating well-formed <once> or <sink>"
   (and (consp sexp)
        (functionp (cdr sexp))
        (member (car sexp) '(once sink))))
 
 (defun app-once (f arg)
+  "Send a value to a sturgeon <once>"
   (assert (sturgeon--app-p f))
   (assert (eq (car f) 'once))
   (funcall (cdr f) 'feed arg))
 
 (defun app-any (f arg)
+  "Send a value to a sturgeon <once> or <sink>"
   (assert (sturgeon--app-p f))
   (funcall (cdr f) 'feed arg))
 
 (defun app-sink (f arg)
+  "Send a value to a sturgeon <sink>"
   (assert (sturgeon--app-p f))
   (assert (eq (car f) 'sink))
   (funcall (cdr f) 'feed arg))
 
 (defun app-batch (f arg)
+  "Send a batch to a sturgeon <sink>. WIP, might be removed in the future"
   (assert (sturgeon--app-p f))
   (assert (eq (car f) 'sink))
   (funcall (cdr f) 'batch arg))
 
 (defun app-quit (f &optional arg)
+  "Close a sturgeon <sink> or cancel a sturgeon <once>. An eventual error message can be provided to signal exceptional conditions."
   (assert (sturgeon--app-p f))
   (funcall (cdr f) 'quit arg))
 
 ;; Garbage collection
 
-(defvar sturgeon--processes nil)
+(defvar sturgeon--processes nil
+  "A list of all sturgeon managed processes.
+  Sturgeon processes are process objects with these properties:
+    'sturgeon-lines
+       unterminated command received from remote processes
+    'sturgeon-cogreetings
+       handler for the initial remote sessions
+    'sturgeon-table
+       the car is the seed of the local gensym.
+       the cdr is table mapping addresses already generated and sent to the
+       remote processes with the local handlers (once or sink values)
+    'sturgeon-roots
+       remote roots retained locally
+  ")
+
+(defvar sturgeon--root-collection nil
+  "nil when idle, or 'pending iff a sturgeon root collection has been scheduled")
 
 (defun sturgeon--root-register (process addr value)
+  "Register a remote value as a sturgeon root. When value is collected by
+  local GC, addr can be released in remote process."
   (let* ((roots (process-get process 'sturgeon-roots))
            (addrs (car roots))
            (weaks (cdr roots)))
@@ -146,9 +241,11 @@
     value))
 
 (defun sturgeon--root-alive (process addr)
+  "Return true iff root at addr is still alive"
   (gethash addr (car (process-get process 'sturgeon-roots))))
 
 (defun sturgeon--root-remove (process addr)
+  "Unregister a root. Doesn't do anything to remote process (root is not released)"
   (let* ((roots (process-get process 'sturgeon-roots))
          (addrs (car roots))
          (weaks (cdr roots)))
@@ -156,6 +253,8 @@
     (remhash addr weaks)))
 
 (defun sturgeon--collect-roots ()
+  "Collect all registered roots: if the local proxy was collected by emacs
+  GC, roots are released in remote processes."
   (setq sturgeon--root-collection nil)
   (let ((sturgeon--root-collection t))
     (setq sturgeon--processes
@@ -176,6 +275,7 @@
          addrs)))))
 
 (defun sturgeon--gc-hook ()
+  "Integrate sturgeon root collection to emacs GC"
   (unless sturgeon--root-collection
     (setq sturgeon--root-collection 'pending)
     (run-at-time 0 nil #'sturgeon--collect-roots)))
@@ -185,7 +285,8 @@
 ;; Communication -- convert to and from extended s-exps
 
 (defun sturgeon--register (process obj)
-  ;; gensym
+  "Allocate a local address for obj, register it with obj in dispatch table
+  and return the identifier to be sent to remote process"
   (let* ((table (process-get process 'sturgeon-table))
          (key (car table)))
     (setcar table (1+ key))
@@ -193,6 +294,7 @@
     (cons (car obj) key)))
 
 (defun sturgeon-cancel (sexp)
+  "Traverse the sexp and cancel all sessions it contains"
   (sturgeon--debug "cancelling" sexp)
   (cond
    ((sturgeon--app-p sexp)
@@ -205,6 +307,8 @@
    (t nil)))
 
 (defun sturgeon--lower (process sexp)
+  "Traverse sexp and lower all sessions it contains: they are turned into
+  plain adresses, registered in dispatch table"
   (cond
    ((sturgeon--app-p sexp)
     (cons 'meta (sturgeon--register process sexp)))
@@ -216,6 +320,8 @@
    (t sexp)))
 
 (defun sturgeon--lift (process kind addr)
+  "Turn a remote address addr from process into a local <once> or <sink>
+  object (according to kind)"
   (lexical-let ((addr addr) (process process) (kind kind))
     (cons
      kind
@@ -233,19 +339,9 @@
           (sturgeon--send process (cons 'feed (cons addr (sturgeon--lower process v)))))
          ))))))
 
-(defun sturgeon--cancel-low (process sexp) (cond
-   ((and (eq (car-safe sexp) 'meta)
-         (eq (car-safe (cdr sexp)) 'escape))
-    nil)
-   ((and (eq (car-safe sexp) 'meta)
-         (member (car-safe (cdr sexp)) '(once sink)))
-    (sturgeon--send process (cons 'quit (cons (cddr sexp) 'cancel))))
-   ((consp sexp)
-    (sturgeon--cancel-low process (car sexp))
-    (sturgeon--cancel-low process (cdr sexp)))
-   (t nil)))
-
 (defun sturgeon--higher (process sexp)
+  "Traverse sexp and lift all sessions it contains with `sturgeon--lift'.
+  This is the operation dual to `sturgeon--lower'."
   (cond
    ((and (eq (car-safe sexp) 'meta)
          (eq (car-safe (cdr sexp)) 'escape))
@@ -258,9 +354,25 @@
           (sturgeon--higher process (cdr sexp))))
    (t sexp)))
 
+(defun sturgeon--cancel-low (process sexp)
+  "Traverse a sexp that has not yet been lifted to session and cancel all
+  addresses from process. This is a lighter alternative to (`sturgeon-cancel' (`sturgeon--lift' ..))"
+  (cond
+   ((and (eq (car-safe sexp) 'meta)
+         (eq (car-safe (cdr sexp)) 'escape))
+    nil)
+   ((and (eq (car-safe sexp) 'meta)
+         (member (car-safe (cdr sexp)) '(once sink)))
+    (sturgeon--send process (cons 'quit (cons (cddr sexp) 'cancel))))
+   ((consp sexp)
+    (sturgeon--cancel-low process (car sexp))
+    (sturgeon--cancel-low process (cdr sexp)))
+   (t nil)))
+
 ;; Process management
 
 (defun sturgeon--wake-up (process addr msg payload)
+  "Handle negation level messages, then call user handler if appropriate"
   (let* ((table (process-get process 'sturgeon-table))
          (handler (gethash addr (cdr table)))
          (fn (cdr handler)))
@@ -270,6 +382,7 @@
     (funcall fn msg payload)))
 
 (defun sturgeon--handler (process answer)
+  "Handle process level messages"
   (setq answer (car (read-from-string answer)))
   (let ((cmd (car-safe answer))
         (payload (cdr-safe answer)))
@@ -297,6 +410,7 @@
      (t (sturgeon--cancel-low process answer)))))
 
 (defun sturgeon--send (process command)
+  "Serialize and send command to remote process"
   (setq command (prin1-to-string command))
   (setq command (replace-regexp-in-string "\n" "\\\\n" command))
   (sturgeon--debug "<" command)
@@ -305,6 +419,7 @@
 ;; Main functions
 
 (defun sturgeon-start (process &rest rest)
+  "Make process a sturgeon managed process. See `sturgeon-start-process' for optional arguments"
   (process-put process 'sturgeon-lines nil)
   (process-put process 'sturgeon-table (cons 0 (make-hash-table)))
   (process-put process 'sturgeon-cogreetings (plist-get rest :cogreetings))
@@ -319,10 +434,16 @@
   process)
 
 (defun sturgeon-start-process (name buffer path args &rest rest)
+  "Start a sturgeon managed process.
+Optional arguments are:
+  :greetings greetings-session
+  :cogreetings function-that-will-receive-remote-greetings
+"
   (let* ((start-file-process
           (if (fboundp 'start-file-process)
               #'start-file-process
             #'start-process))
+         ;; Invoke with a pipe rather than a pty
          (process-connection-type nil)
          (process (apply start-file-process name buffer path args)))
     (apply 'sturgeon-start process rest)))
@@ -331,25 +452,24 @@
 
 (require 'button)
 
-(defvar-local sturgeon--cursors nil)
-(defvar-local sturgeon--revision 0)
-(defvar-local sturgeon--point-moved nil)
-(defvar-local sturgeon--last-point 0)
-(defconst sturgeon--active-cursor nil)
-(defconst sturgeon--root-collection nil)
+(defvar-local sturgeon-ui--cursor nil)
+(defvar-local sturgeon-ui--revision 0)
+(defvar-local sturgeon-ui--point-moved nil)
+(defvar-local sturgeon-ui--last-point 0)
+(defconst sturgeon-ui--active nil)
 
 ;; cursor = [0:buffer 1:sink 2:remote-revision 3:changes 4:latest-remote]
-(defun sturgeon--change-cursor (cursor beg end len)
+(defun sturgeon-ui--change-cursor (cursor beg end len)
   (setq beg (1- beg))
   (setq end (1- end))
   ;; Record changes
   (let ((changes (elt cursor 3)))
     (unless (equal len 0)
       (setq changes
-            (cons (vector sturgeon--revision 'remove beg len) changes)))
+            (cons (vector sturgeon-ui--revision 'remove beg len) changes)))
     (unless (equal beg end)
       (setq changes
-            (cons (vector sturgeon--revision 'insert beg (- end beg)) changes)))
+            (cons (vector sturgeon-ui--revision 'insert beg (- end beg)) changes)))
     (aset cursor 3 changes))
   ;; Commit changes
   (let* ((text (encode-coding-string
@@ -363,23 +483,24 @@
               (t
                (cons 'replace (cons len (cons (length text) text))))))
          (action (list 'patch
-                       (cons (elt cursor 2) sturgeon--revision)
+                       (cons (elt cursor 2) sturgeon-ui--revision)
                        (cons beg op)
                        (cons 'editable nil))))
-    (aset cursor 4 sturgeon--revision)
+    (aset cursor 4 sturgeon-ui--revision)
     (app-sink (elt cursor 1) action)))
 
-(defun sturgeon--before-change-hook (beg end)
-  (unless sturgeon--active-cursor
-    (setq sturgeon--last-point (point))))
+(defun sturgeon-ui--before-change (beg end)
+  (when sturgeon-ui--cursor
+    (unless sturgeon-ui--active
+      (setq sturgeon-ui--last-point (point)))))
 
-(defun sturgeon--after-change-hook (beg end len)
-  (setq sturgeon--revision (1+ sturgeon--revision))
-  (dolist (cursor sturgeon--cursors)
-    (unless (eq cursor sturgeon--active-cursor)
-      (sturgeon--change-cursor cursor beg end len))))
+(defun sturgeon-ui--after-change (beg end len)
+  (when sturgeon-ui--cursor
+    (setq sturgeon-ui--revision (1+ sturgeon-ui--revision))
+    (unless sturgeon-ui--active
+      (sturgeon-ui--change-cursor stugeon-ui--cursor beg end len))))
 
-(defun sturgeon--update-revisions (cursor revisions)
+(defun sturgeon-ui--update-revisions (cursor revisions)
   (aset cursor 2 (cdr revisions))
   (let ((pred (lambda (change) (<= (elt change 0) (car revisions)))))
     (aset cursor 3 (delete-if pred (elt cursor 3))))
@@ -387,7 +508,7 @@
     (aset cursor 4 (cdr revisions))
     (app-sink
      (elt cursor 1)
-     `(ack ,(cons (cdr revisions) sturgeon--revision)))))
+     `(ack ,(cons (cdr revisions) sturgeon-ui--revision)))))
 
 (defun sturgeon--remap (s l x)
   (if (< x s) x
@@ -431,7 +552,7 @@
 (defun sturgeon-ui--cursor-action (x)
   (let* ((cursor (button-get x 'sturgeon-cursor))
          (sink   (elt cursor 1))
-         (rev    (cons (elt cursor 2) sturgeon--revision))
+         (rev    (cons (elt cursor 2) sturgeon-ui--revision))
          (offset (1- (marker-position x)))
          (action `(patch ,rev ,offset (propertize . 0) (clicked))))
     (app-sink sink action)))
@@ -439,7 +560,7 @@
 (defun sturgeon-ui--substitute (cursor offset oldlen text newlen flags)
  (let ((point-begin (point))
        (inhibit-read-only t)
-       (sturgeon--active-cursor cursor))
+       (sturgeon-ui--active-cursor cursor))
    (save-excursion
      (when (> oldlen 0)
        (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
@@ -467,26 +588,26 @@
 
    ;; (message "%d: removed %d inserted %d %S, point %d moved to %d, last user point was %d, last forced move was %d to %d"
    ;;          (1+ offset) oldlen newlen text point-begin (point)
-   ;;          sturgeon--last-point
-   ;;          (or (car-safe sturgeon--point-moved) 0) (or (cdr-safe sturgeon--point-moved) 0))
+   ;;          sturgeon-ui--last-point
+   ;;          (or (car-safe sturgeon-ui--point-moved) 0) (or (cdr-safe sturgeon-ui--point-moved) 0))
 
    ;; First check: user removed a character that sturgeon reinserted
    ;;              immediately after
    (when (and (equal (point) point-begin)
               (equal point-begin (1+ offset))
               (equal newlen 1)
-              (equal sturgeon--last-point (1+ point-begin)))
-     ;; (message "MOVE TO %d" sturgeon--last-point)
-     (goto-char sturgeon--last-point))
+              (equal sturgeon-ui--last-point (1+ point-begin)))
+     ;; (message "MOVE TO %d" sturgeon-ui--last-point)
+     (goto-char sturgeon-ui--last-point))
 
    ;; Second check: sturgeon reinserted data it had removed at a place
    ;;               where the cursor was and had to be moved.
    (if (not (equal (point) point-begin))
-       (setq sturgeon--point-moved (cons point-begin (point)))
-     (if (equal point-begin (cdr-safe sturgeon--point-moved))
+       (setq sturgeon-ui--point-moved (cons point-begin (point)))
+     (if (equal point-begin (cdr-safe sturgeon-ui--point-moved))
        (progn
-         (goto-char (min (+ 1 offset newlen) (car-safe sturgeon--point-moved)))
-         (setq sturgeon--point-moved (cons point-begin (car-safe sturgeon--point-moved))))
+         (goto-char (min (+ 1 offset newlen) (car-safe sturgeon-ui--point-moved)))
+         (setq sturgeon-ui--point-moved (cons point-begin (car-safe sturgeon-ui--point-moved))))
        ))
    ))
 
@@ -497,7 +618,7 @@
          (operation (elt value 3))
          (kind      (car operation))
          (flags     (elt value 4)))
-    (sturgeon--update-revisions cursor revisions)
+    (sturgeon-ui--update-revisions cursor revisions)
     (with-current-buffer buffer
       (cond
         ((eq kind 'propertize)
@@ -512,50 +633,48 @@
                                   (caddr operation) (cdddr operation) flags))
       ))))
 
-(defun sturgeon-ui--make-cursor (buffer point sink)
+(define-derived-mode sturgeon-mode fundamental-mode "Sturgeon"
+   "A major mode for Sturgeon managed buffers"
+   (buffer-disable-undo)
+   (add-hook 'before-change-functions 'sturgeon-ui--before-change 'local)
+   (add-hook 'after-change-functions 'sturgeon-ui--after-change 'local))
+
+(defun sturgeon-ui--manage-buffer (buffer sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
     (with-current-buffer buffer
-      (setq sturgeon--cursors (cons cursor sturgeon--cursors))
-      (make-local-variable 'before-change-functions)
-      (add-hook 'before-change-functions 'sturgeon--before-change-hook)
-      (make-local-variable 'after-change-functions)
-      (add-hook 'after-change-functions 'sturgeon--after-change-hook)
+      (erase-buffer)
+      (setq sturgeon-ui--cursor cursor)
+      (sturgeon-mode)
       (lambda-sink value
         (cond
          ((eq (car value) 'ack)
           (let* ((revisions (cadr value)))
-            (sturgeon--update-revisions cursor revisions)))
+            (sturgeon-ui--update-revisions cursor revisions)))
          ((eq (car value) 'patch)
           (sturgeon-ui--apply-patch cursor value)))))))
 
-(defun sturgeon-ui-handler (value &optional buffer point)
+(defun sturgeon-ui-handler (value &optional buffer)
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
            (let* ((name (cadr value))
-                  (buffer (if (or (not buffer) sturgeon--cursors)
-                              (get-buffer-create (generate-new-buffer-name name))
-                            (with-current-buffer buffer
-                              (rename-buffer name t)
-                              buffer)))
-                  (point (if point point
-                           (with-current-buffer buffer (point-min))))
                   (sink (caddr value)))
+             (if (and buffer (not sturgeon-ui--cursor))
+                 (with-current-buffer buffer (rename-buffer name t))
+               (setq buffer
+                     (get-buffer-create (generate-new-buffer-name name))))
              (app-any
-              sink (cons 'sink (sturgeon-ui--make-cursor buffer point sink)))))
+              sink (cons 'sink (sturgeon-ui--manage-buffer buffer sink)))))
           (t (sturgeon-cancel value)))))
 
 (defun sturgeon-ui-cogreetings (buffer)
-  (lexical-let* ((buffer buffer)
-                 (marker (with-current-buffer buffer (point-marker))))
+  (lexical-let* ((buffer buffer))
     (lambda (value)
       (cond
        ((eq (car-safe value) 'buffer-shell)
         (app-once (cadr value)
-                  (lambda-sink value
-                    (let ((point (when buffer (marker-position marker))))
-                      (sturgeon-ui-handler value buffer point)))))
-       (t (sturgeon-cancel value)))
-      )))
+                  (lambda-sink value (sturgeon-ui-handler value buffer))))
+       (t (sturgeon-cancel value))
+       ))))
 
 (defun sturgeon-launch (filename)
   (interactive "fProgram path: ")
