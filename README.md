@@ -1,4 +1,4 @@
-sturgeon — A toolkit for communicating with Emacs
+Sturgeon — A toolkit for communicating with Emacs
 -------------------------------------------------------------------------------
 %%VERSION%%
 

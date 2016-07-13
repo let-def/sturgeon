@@ -33,7 +33,7 @@ type 'a sexp =
     C of 'a sexp * 'a sexp  (** cons cell   *)
   | S of string       (** 'sym        *)
   | T of string       (** "text"      *)
-  | P of 'a sexp         (** #(property) *)
+  | P of 'a sexp      (** #(property) *)
   | I of int          (** 1           *)
   | F of float        (** 1.0         *)
   | M of 'a           (** user-defined construction, outside of s-exp language *)
