@@ -97,12 +97,12 @@ are closed.
 
 In an UNIX environment,  standard construct for exchanging sessions are *commands* and *servers*.  Implemented by [[Sturgeon_recipes_command]] and [[Sturgeon_recipes_server]].
 
-Command::
+Command
 :: Commands behave like normal unix binaries.  Instead of communicating with
 raw text on stdin/stdout, they exchange sessions.  The parent process of the
 command is responsible for interpreting these sessions.
 
-Server::
+Server
 :: Servers are persistent unix processes to which one can connect.  When
 started, these processes open a unix socket in
 /tmp/sturgeon.$$UID/<name>.$$PID.socket. The
