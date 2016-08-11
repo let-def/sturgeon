@@ -477,14 +477,14 @@ Optional arguments are:
                 'utf-8 t))
          (op (cond
               ((equal (length text) 0)
-               (cons 'replace len))
+               (cons 'remove len))
               ((equal len 0)
-               (cons 'insert (cons (length text) text)))
+               (cons 'insert (cons text (length text))))
               (t
-               (cons 'replace (cons len (cons (length text) text))))))
+               (cons 'replace (cons len (cons text (length text)))))))
          (action (list 'patch
                        (cons (elt cursor 2) sturgeon-ui--revision)
-                       (cons beg op)
+                       beg op
                        (cons 'editable nil))))
     (aset cursor 4 sturgeon-ui--revision)
     (app-sink (elt cursor 1) action)))
@@ -498,7 +498,7 @@ Optional arguments are:
   (when sturgeon-ui--cursor
     (setq sturgeon-ui--revision (1+ sturgeon-ui--revision))
     (unless sturgeon-ui--active
-      (sturgeon-ui--change-cursor stugeon-ui--cursor beg end len))))
+      (sturgeon-ui--change-cursor sturgeon-ui--cursor beg end len))))
 
 (defun sturgeon-ui--update-revisions (cursor revisions)
   (aset cursor 2 (cdr revisions))
@@ -560,7 +560,7 @@ Optional arguments are:
 (defun sturgeon-ui--substitute (cursor offset oldlen text newlen flags)
  (let ((point-begin (point))
        (inhibit-read-only t)
-       (sturgeon-ui--active-cursor cursor))
+       (sturgeon-ui--active t))
    (save-excursion
      (when (> oldlen 0)
        (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
@@ -636,15 +636,15 @@ Optional arguments are:
 (define-derived-mode sturgeon-mode fundamental-mode "Sturgeon"
    "A major mode for Sturgeon managed buffers"
    (buffer-disable-undo)
-   (add-hook 'before-change-functions 'sturgeon-ui--before-change 'local)
-   (add-hook 'after-change-functions 'sturgeon-ui--after-change 'local))
+   (add-hook 'before-change-functions 'sturgeon-ui--before-change nil 'local)
+   (add-hook 'after-change-functions 'sturgeon-ui--after-change nil 'local))
 
 (defun sturgeon-ui--manage-buffer (buffer sink)
   (lexical-let ((cursor (vector buffer sink 0 nil 0)))
     (with-current-buffer buffer
       (erase-buffer)
-      (setq sturgeon-ui--cursor cursor)
       (sturgeon-mode)
+      (setq sturgeon-ui--cursor cursor)
       (lambda-sink value
         (cond
          ((eq (car value) 'ack)
