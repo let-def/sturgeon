@@ -19,7 +19,7 @@ let () =
   let k = Stui.create_cursor shell ~name:"spotifouille" in
   text k " Recherche: ";
   let k' = ref null in
-  let _ = Edit.make k ~state:" " ~on_change:(fun t ->
+  let _ = Edit.make k ~on_change:(fun t ->
       clear !k';
       text !k' (String.concat ", " (extract_words (Edit.state t)));
     ) in

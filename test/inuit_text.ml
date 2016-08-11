@@ -18,11 +18,11 @@ let () =
   text k " Check me\n";
   text k "Edit me: ";
   let k' = ref null in
-  let _ = Edit.make k ~state:" " ~on_change:(fun t ->
+  let _ = Edit.make k ~on_change:(fun t ->
       let str = Edit.state t in
       clear !k';
       text !k' "UPPERCASED: ";
-      text !k' str;
+      text !k' (String.uppercase_ascii str);
     ) in
   text k "\n";
   k' := sub k;
