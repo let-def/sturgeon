@@ -1,4 +1,4 @@
-true : bin_annot, safe_string, package(bytes), package(inuit)
+true : bin_annot, safe_string, package(bytes), package(inuit), debug
 
 <src/sturgeon_recipes_server.*> : thread
 <src/sturgeon_connector.*> : package(unix)
