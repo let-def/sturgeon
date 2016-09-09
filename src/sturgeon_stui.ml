@@ -2,7 +2,8 @@ open Sturgeon_sexp
 open Sturgeon_session
 open Inuit
 
-type flag = [`Clickable | `Clicked | `Editable | `Invisible]
+type flag = [ `Clickable | `Clicked | `Editable | `Prompt
+            | `Custom of (string * Sturgeon_sexp.basic) ]
 
 let dump_sexp sexp =
   let inj _ = S "<abstract>" and map x = x in
@@ -15,24 +16,55 @@ let revision_of_sexp = function
   | C (I remote, I local) -> {Remote. remote; local}
   | sexp -> failwith ("revision_of_sexp: cannot parse " ^ dump_sexp sexp)
 
-let sexp_of_flags flags =
+let sexp_of_flags (flags : flag list) =
+  let customs = ref sym_nil in
   let rec aux acc = function
     | [] -> acc
     | `Clickable :: xs -> aux (C (S "clickable", acc)) xs
     | `Editable  :: xs -> aux (C (S "editable", acc)) xs
-    | `Invisible :: xs -> aux (C (S "invisible", acc)) xs
+    | `Prompt :: xs -> aux (C (S "prompt", acc)) xs
     | `Clicked   :: xs -> aux (C (S "clicked", acc)) xs
+    | `Custom (key, value) :: xs ->
+      customs := C (S key, C (transform_cons ~inj:void value, !customs));
+      aux acc xs
   in
-  aux (S "nil") flags
+  let acc = aux (S "nil") flags in
+  if !customs = sym_nil then acc else C (C (S "custom", !customs), acc)
 
 let flags_of_sexp sexp =
   let rec aux acc = function
     | C (S "clickable", xs) -> aux (`Clickable :: acc) xs
     | C (S "clicked", xs)   -> aux (`Clicked :: acc) xs
     | C (S "editable", xs)  -> aux (`Editable :: acc) xs
-    | C (S "invisible", xs) -> aux (`Invisible :: acc) xs
+    | C (S "prompt", xs) -> aux (`Prompt :: acc) xs
+    | C (C (S "custom", x), xs) ->
+      let x = transform_cons ~inj:(fun dual ->
+          begin try
+              let (Once neg | Sink neg) = dual in
+              neg cancel_message
+            with _ -> ()
+          end;
+          prerr_endline "invalid input, received flags with negations";
+          sym_nil)
+          ~map:(fun x -> x)
+          x
+      in
+      let rec custom = function
+        | S "nil" -> acc
+        | C (C ((S key | T key), value), xs) ->
+          `Custom (key, value) :: custom xs
+        | C (x, xs) ->
+          prerr_endline ("Incorrect custom flag: " ^ dump_sexp x);
+          custom xs
+        | xs ->
+          prerr_endline ("Incorrect custom flags: " ^ dump_sexp x);
+          acc
+      in
+      aux (custom x) xs
     | S "nil" -> acc
-    | sexp -> prerr_endline ("Unknown flags: " ^ dump_sexp sexp); acc
+    | C (sexp, xs) -> prerr_endline ("Unknown flags: " ^ dump_sexp sexp);
+      aux acc xs
+    | sexp -> prerr_endline ("Incorrect flags: " ^ dump_sexp sexp); acc
   in
   aux [] sexp
 

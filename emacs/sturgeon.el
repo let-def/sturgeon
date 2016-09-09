@@ -557,10 +557,17 @@ Optional arguments are:
          (action `(patch ,rev ,offset (propertize . 0) (clicked))))
     (app-sink sink action)))
 
+(defun sturgeon-ui--propertize (cursor offset len flags)
+  (let ((custom-prop (cdr-safe (assoc 'custom flags))))
+    (when custom-prop (add-text-properties offset (+ offset len) flags)))
+  ;; TODO: handle other properties
+  )
+
 (defun sturgeon-ui--substitute (cursor offset oldlen text newlen flags)
- (let ((point-begin (point))
-       (inhibit-read-only t)
-       (sturgeon-ui--active t))
+  (let ((point-begin (point))
+        (inhibit-read-only t)
+        (inhibit-point-motion-hooks t)
+        (sturgeon-ui--active t))
    (save-excursion
      (when (> oldlen 0)
        (let ((pos (sturgeon--commute-op cursor 'remove offset oldlen)))
@@ -572,14 +579,22 @@ Optional arguments are:
         (when (> (cdr pos) 0)
           (unless (member 'raw flags)
             (setq text (decode-coding-string text 'utf-8 t)))
-          (unless (member 'editable flags)
+          (when (and (member 'prompt flags) (> (length text) 0))
+            (setq text (propertize text 'read-only t 'intangible t))
+            (add-text-properties (1- (length text)) (length text)
+                                 '(rear-nonsticky
+                                   (intangible sturgeon-actionable read-only)
+                                   sturgeon-actionable after)
+                                 text))
+          (if (member 'editable flags)
+              (setq text (propertize text 'sturgeon-actionable t))
             (setq text (propertize text 'read-only t)))
-          (when (member 'invisible flags)
-            (setq text (propertize text 'invisible t)))
+          (let ((custom-prop (cdr-safe (assoc 'custom flags))))
+            (when custom-prop (setq text (apply 'propertize text custom-prop))))
           (goto-char (1+ (car pos)))
           (if (member 'clickable flags)
               (insert-text-button
-               text
+               (propertize text 'sturgeon-actionable t)
                'action 'sturgeon-ui--cursor-action
                'sturgeon-cursor cursor)
              (insert text))))))
@@ -593,23 +608,26 @@ Optional arguments are:
 
    ;; First check: user removed a character that sturgeon reinserted
    ;;              immediately after
-   (when (and (equal (point) point-begin)
-              (equal point-begin (1+ offset))
-              (equal newlen 1)
-              (equal sturgeon-ui--last-point (1+ point-begin)))
-     ;; (message "MOVE TO %d" sturgeon-ui--last-point)
-     (goto-char sturgeon-ui--last-point))
+   ;; (when (and (equal (point) point-begin)
+   ;;            (equal point-begin (1+ offset))
+   ;;            (equal newlen 1)
+   ;;            (equal sturgeon-ui--last-point (1+ point-begin)))
+   ;;   ;; (message "MOVE TO %d" sturgeon-ui--last-point)
+   ;;   (goto-char sturgeon-ui--last-point))
 
-   ;; Second check: sturgeon reinserted data it had removed at a place
-   ;;               where the cursor was and had to be moved.
-   (if (not (equal (point) point-begin))
-       (setq sturgeon-ui--point-moved (cons point-begin (point)))
-     (if (equal point-begin (cdr-safe sturgeon-ui--point-moved))
-       (progn
-         (goto-char (min (+ 1 offset newlen) (car-safe sturgeon-ui--point-moved)))
-         (setq sturgeon-ui--point-moved (cons point-begin (car-safe sturgeon-ui--point-moved))))
-       ))
+   ;; ;; Second check: sturgeon reinserted data it had removed at a place
+   ;; ;;               where the cursor was and had to be moved.
+   ;; (if (not (equal (point) point-begin))
+   ;;     (setq sturgeon-ui--point-moved (cons point-begin (point)))
+   ;;   (if (equal point-begin (cdr-safe sturgeon-ui--point-moved))
+   ;;     (progn
+   ;;       (goto-char (min (+ 1 offset newlen) (car-safe sturgeon-ui--point-moved)))
+   ;;       (setq sturgeon-ui--point-moved (cons point-begin (car-safe sturgeon-ui--point-moved))))
+   ;;     ))
+   ;; ))
    ))
+
+(push 'sturgeon-actionable text-property-default-nonsticky)
 
 (defun sturgeon-ui--apply-patch (cursor value)
   (let* ((buffer    (elt cursor 0))
@@ -622,7 +640,7 @@ Optional arguments are:
     (with-current-buffer buffer
       (cond
         ((eq kind 'propertize)
-         nil) ;; TODO
+         (sturgeon-ui--propertize cursor offset (cdr operation) flags))
         ((eq kind 'remove)
          (sturgeon-ui--substitute cursor offset (cdr operation) "" 0 flags))
         ((eq kind 'insert)
@@ -713,6 +731,31 @@ Optional arguments are:
   (let ((default-directory server)
         (sturgeon--remote t))
     (call-interactively 'sturgeon-connect)))
+
+(defun sturgeon-previous-actionable ()
+  (interactive)
+  (let (point)
+    (setq point (previous-single-property-change (point) 'sturgeon-actionable))
+    (when (and point (not (get-text-property point 'sturgeon-actionable)))
+      (setq point (or (previous-single-property-change point 'sturgeon-actionable)
+                      point)))
+    (when point
+      (goto-char point))))
+
+(defun sturgeon-next-actionable ()
+  (interactive)
+  (let (point)
+    (setq point (next-single-property-change (point) 'sturgeon-actionable))
+    (when (and point (not (get-text-property point 'sturgeon-actionable)))
+      (setq point (or (next-single-property-change point 'sturgeon-actionable)
+                      point)))
+    (when point
+      (if (eq (get-text-property point 'sturgeon-actionable) 'after)
+        (setq point (1+ point)))
+      (goto-char point))))
+
+(define-key sturgeon-mode-map (kbd "TAB") 'sturgeon-next-actionable)
+(define-key sturgeon-mode-map (kbd "<backtab>") 'sturgeon-previous-actionable)
 
 ;; Done
 
