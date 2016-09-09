@@ -5,7 +5,7 @@
    When a client connects, a buffer is created and it's main cursor is assigned
    to k.
  *)
-#require "sturgeon";;
+#require "sturgeon.recipes_server";;
 #require "threads.posix";;
 let k =
   let k = ref Inuit.Cursor.null in
