@@ -23,7 +23,7 @@ type 'a sexp =
 type void
 let void (_ : void) = assert false
 
-let transform_list ~inj ~map t =
+let transform_list ~inj ?(map=fun x -> x) t =
   let rec aux = function
     | S _ | T _ | I _ | F _ as t' -> map t'
     | C (a, b) -> map (C (aux a, aux_cons b))
@@ -36,7 +36,7 @@ let transform_list ~inj ~map t =
   in
   aux t
 
-let transform_cons ~inj ~map t =
+let transform_cons ~inj ?(map=fun x -> x) t =
   let rec aux = function
     | S _ | T _ | I _ | F _ as t' -> map t'
     | C (a, b) -> map (C (aux a, aux b))
@@ -45,6 +45,8 @@ let transform_cons ~inj ~map t =
   in
   aux t
 
+let generalize_basic x =
+  transform_cons ~inj:void x
 
 type basic = void sexp
 

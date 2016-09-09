@@ -40,11 +40,11 @@ type 'a sexp =
 
 (** Recursively transform a sexp.
     [map] function is applied on each atom and at the root of each list *)
-val transform_list : inj:('a -> 'b sexp) -> map:('b sexp -> 'b sexp) -> 'a sexp -> 'b sexp
+val transform_list : inj:('a -> 'b sexp) -> ?map:('b sexp -> 'b sexp) -> 'a sexp -> 'b sexp
 
 (** Recursively transform a sexp.
     [map] function is applied on each atom and each cons-cell *)
-val transform_cons : inj:('a -> 'b sexp) -> map:('b sexp -> 'b sexp) -> 'a sexp -> 'b sexp
+val transform_cons : inj:('a -> 'b sexp) -> ?map:('b sexp -> 'b sexp) -> 'a sexp -> 'b sexp
 
 (** nil constant: S "nil" *)
 val sym_nil : 'a sexp
@@ -68,6 +68,10 @@ type void
 val void: void -> 'a
 
 type basic = void sexp
+
+(** Recover polymorphism *)
+val generalize_basic : basic -> 'a sexp
+
 (** {1 Low-level IO} *)
 
 (** Serialize an s-exp by repetively calling a string printing function. *)
