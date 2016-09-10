@@ -39,20 +39,36 @@ type flag = [ `Clickable | `Clicked | `Editable | `Prompt
 
     TODO:
     - bind [message] function from emacs for reporting information *)
-type buffer_shell
+type shell
 
 (** [buffer_greetings] provide you with a session and a shell.
     Send the session as a greetings to emacs instance and the shell will
     open and display buffers in this instance. *)
-val buffer_greetings :
-  unit -> Sturgeon_session.t * buffer_shell
+val buffer_greetings : unit -> Sturgeon_session.t * shell
+
+val message : shell -> string -> unit
+
+type buffer
 
 (** Create patch socket (low-level) from a shell. *)
-val create_buffer : buffer_shell -> name:string -> flag patch socket -> unit
+val create_buffer : shell -> name:string -> buffer
+
+(** *)
+val open_cursor : buffer -> flag cursor
+val manual_connect : buffer -> flag patch socket -> unit
 
 (** Create cursor ready to output in a buffer. *)
-val create_cursor : buffer_shell -> name:string -> flag cursor
+val create_cursor : shell -> name:string -> flag cursor
 
-(** FIXME: Document other protocols *)
-val accept_buffer : Sturgeon_session.t -> flag patch socket -> unit
-val accept_cursor : Sturgeon_session.t -> flag cursor
+(** Auxiliary interactions *)
+
+type 'a menu =
+  [ `Item of string * 'a
+  | `Sub of string * 'a menu list
+  ]
+
+val popup_menu :
+  shell -> string -> 'a menu list -> 'a Sturgeon_session.neg -> unit
+
+val fit_to_window : buffer -> unit
+val split : buffer -> name:string -> [`Left|`Right|`Top|`Bottom] -> buffer

@@ -37,7 +37,7 @@ val server:
 
 val text_server:
   string ->
-  (args:Session.t -> Stui.buffer_shell -> unit) ->
+  (args:Session.t -> Stui.shell -> unit) ->
   server
 
 val accept :

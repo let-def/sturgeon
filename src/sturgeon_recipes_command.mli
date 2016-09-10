@@ -34,4 +34,4 @@ val command :
   ?cogreetings:(Session.t -> unit) ->
   unit -> 'a
 
-val text_command : (args:Session.t -> Stui.buffer_shell -> unit) -> 'a
+val text_command : (args:Session.t -> Stui.shell -> unit) -> 'a

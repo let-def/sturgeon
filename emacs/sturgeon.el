@@ -666,6 +666,26 @@ Optional arguments are:
       (setq sturgeon-ui--cursor cursor)
       (lambda-sink value
         (cond
+         ((eq (car value) 'split)
+          (let ((split (cadr value))
+                (buffer (get-buffer-create
+                          (generate-new-buffer-name (caddr value))))
+                (sink (cadddr value))
+                (window (or (get-buffer-window (elt cursor 0)) (selected-window))))
+            (cond
+              ((eq split 'left) (split-window-horizontally))
+              ((eq split 'top) (split-window-vertically))
+              ((eq split 'right) (setq window (split-window-horizontally)))
+              ((eq split 'bottom) (setq window (split-window-vertically))))
+            (with-selected-window window
+             (switch-to-buffer buffer)
+             (app-any
+              sink (cons 'sink (sturgeon-ui--manage-buffer buffer sink))))))
+         ((eq (car value) 'fit)
+          (let ((window (get-buffer-window (elt cursor 0)))
+                (fit-window-to-buffer-horizontally t))
+            (when window
+              (with-selected-window window (fit-window-to-buffer)))))
          ((eq (car value) 'ack)
           (let* ((revisions (cadr value)))
             (sturgeon-ui--update-revisions cursor revisions)))
@@ -675,14 +695,23 @@ Optional arguments are:
 (defun sturgeon-ui-handler (value &optional buffer)
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
-           (let* ((name (cadr value))
-                  (sink (caddr value)))
+           (let ((name (cadr value))
+                 (sink (caddr value)))
              (if (and buffer (not sturgeon-ui--cursor))
                  (with-current-buffer buffer (rename-buffer name t))
                (setq buffer
                      (get-buffer-create (generate-new-buffer-name name))))
              (app-any
               sink (cons 'sink (sturgeon-ui--manage-buffer buffer sink)))))
+          ((eq cmd 'message)
+           (message "%s" (cadr value)))
+          ((eq cmd 'popup-menu)
+           (let ((title (cadr value))
+                 (items (caddr value))
+                 (callback (cadddr value)))
+             (app-once callback
+                       (with-local-quit
+                         (popup-menu (easy-menu-create-menu title items))))))
           (t (sturgeon-cancel value)))))
 
 (defun sturgeon-ui-cogreetings (buffer)

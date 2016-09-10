@@ -49,6 +49,7 @@ let cancel ?stderr (t : t) =
     | P t -> aux t
     | S _ | T _ -> ()
     | I _ | F _ -> ()
+    | V xs -> List.iter aux xs
     | M (Once t | Sink t) ->
       try t cancel_message
       with exn -> exns := exn :: !exns

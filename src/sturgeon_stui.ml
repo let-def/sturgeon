@@ -108,80 +108,147 @@ let remote_patch_of_sexp = function
     Remote.Patch ((revision_of_sexp revision), patch)
   | sexp -> failwith ("remote_patch_of_sexp: cannot parse " ^ dump_sexp sexp)
 
-let remote_patch_socket () =
+(** Buffer management *)
+
+type aux_command =
+  [ `Split of [`Left|`Right|`Top|`Bottom] * string * Sturgeon_session.t
+  | `Fit ]
+
+type buffer = {
+  command: aux_command Socket.controller;
+  patches: flag patch socket;
+}
+
+let sexp_of_buffer_command : aux_command -> Sturgeon_session.t = function
+  | `Split (dir, name, session) ->
+    let dir = match dir with
+      | `Left -> "left" | `Right -> "right"
+      | `Top -> "top" | `Bottom -> "bottom"
+    in
+    sexp_of_list [S "split"; S dir; T name; session]
+  | `Fit -> C (S "fit", sym_nil)
+
+(** *)
+
+let remote_buffer () =
   let queue = ref [] in
-  let socket = Socket.make ~receive:(fun msg -> queue := msg :: !queue) in
+  let patch_socket =
+    Socket.make ~receive:(fun x -> queue := sexp_of_remote_patch x :: !queue)
+  and command_socket =
+    Socket.make ~receive:(fun x -> queue := sexp_of_buffer_command x :: !queue)
+  in
   let handler = function
     | Feed (C (S "sink", M (Sink sink))) ->
       let rec aux = function
-        | x :: xs ->
-          sink (Feed (sexp_of_remote_patch x)); aux xs
+        | x :: xs -> sink (Feed x); aux xs
         | [] ->
           let xs = !queue in
           queue := [];
           if xs <> [] then aux (List.rev xs)
       in
       aux [];
-      Socket.set_receive socket
-        (fun msg -> sink (Feed (sexp_of_remote_patch msg)))
+      Socket.set_receive patch_socket
+        (fun msg -> sink (Feed (sexp_of_remote_patch msg)));
+      Socket.set_receive command_socket
+        (fun msg -> sink (Feed (sexp_of_buffer_command msg)))
     | Feed sexp ->
-      Socket.send socket (remote_patch_of_sexp sexp)
+      Socket.send patch_socket (remote_patch_of_sexp sexp)
     | Quit _ ->
-      Socket.close socket
+      Socket.close patch_socket;
+      Socket.close command_socket
   in
-  (Socket.endpoint socket, M (Sink handler))
-
-type buffer_shell = {
-  create_buffer : name:string -> flag patch socket -> unit;
-}
+  let command = Socket.make ~receive:ignore in
+  let remote, patches = Remote.make () in
+  Socket.connect
+    ~a:(Socket.endpoint command_socket)
+    ~b:(Socket.endpoint command);
+  Socket.connect ~a:remote ~b:(Socket.endpoint patch_socket);
+  ({ command; patches; },
+   M (Sink handler))
 
 type shell_status =
   | Pending of Sturgeon_session.t list
   | Connected of Sturgeon_session.t neg
 
+type shell = {
+  mutable status : shell_status;
+}
+
 let buffer_greetings () =
-  let status = ref (Pending []) in
-  let shell = function
-    | Feed (M (Sink t)) ->
-      begin match !status with
-        | Connected _ ->
-          failwith "Stui.buffer_greetings: invalid session, already connected"
-        | Pending xs ->
-          status := Connected t;
-          List.iter (fun x -> t (Feed x)) (List.rev xs)
-      end
-    | _ -> failwith "Stui.buffer_greetings: invalid session, unknown command"
+  let shell = { status = (Pending []) } in
+  let session = sexp_of_list [S "buffer-shell"; M (Once (function
+      | Feed (M (Sink t)) ->
+        begin match shell.status with
+          | Connected _ ->
+            failwith "Stui.buffer_greetings: invalid session, already connected"
+          | Pending xs ->
+            shell.status <- Connected t;
+            List.iter (fun x -> t (Feed x)) (List.rev xs)
+        end
+      | _ -> failwith "Stui.buffer_greetings: invalid session, unknown command"
+    ))]
   in
-  let sexp = sexp_of_list [S "buffer-shell"; M (Once shell)] in
-  let create_buffer ~name pa =
-    let remote, local = Remote.make () in
-    let session_socket, session_sexp = remote_patch_socket () in
-    Socket.connect ~a:remote ~b:session_socket;
-    Socket.connect ~a:pa ~b:local;
-    let answer = sexp_of_list [S "create-buffer"; T name; session_sexp] in
-    match !status with
-    | Pending xs -> status := Pending (answer :: xs)
-    | Connected t -> t (Feed answer)
+  (session, shell)
+
+let send shell command =
+  let command = sexp_of_list command in
+  match shell.status with
+  | Connected sink -> sink (Feed command)
+  | Pending xs -> shell.status <- Pending (command :: xs)
+
+let create_buffer shell ~name =
+  let buffer, session = remote_buffer () in
+  send shell [S "create-buffer"; T name; session];
+  buffer
+
+let message shell text =
+  send shell [S "message"; T text]
+
+type 'a menu =
+  [ `Item of string * 'a
+  | `Sub of string * 'a menu list
+  ]
+
+let popup_menu shell title items action =
+  let next_index = ref 0 in
+  let payloads = ref [] in
+  let rec aux = function
+    | `Item (title, value) ->
+      payloads := value :: !payloads;
+      let index = !next_index in
+      incr next_index;
+      V [T title; I index]
+    | `Sub (title, items) ->
+      let items = List.map aux items in
+      C (T title, sexp_of_list items)
   in
-  (sexp, {create_buffer})
+  let items = List.map aux items in
+  let values = Array.of_list (List.rev !payloads) in
+  let action = Once (function
+      | Feed (I n) -> action (Feed values.(n))
+      | Feed sexp ->
+        Sturgeon_session.cancel sexp;
+        action (Quit (T "Invalid value (incorrect protocol)"))
+      | Quit err -> action (Quit err)
+    )
+  in
+  send shell [S "popup-menu"; T title; sexp_of_list items; M action]
 
-let accept_buffer session pa = match session with
-  | M (Sink t) ->
-    let remote, local = Remote.make () in
-    let session_socket, session_sexp = remote_patch_socket () in
-    Socket.connect ~a:remote ~b:session_socket;
-    Socket.connect ~a:pa ~b:local;
-    t (Feed (C (S "accept", session)))
-  | _ -> invalid_arg "Stui.accept_buffer"
+let manual_connect buffer socket =
+  Socket.connect ~a:buffer.patches ~b:socket
 
-let accept_cursor session =
+let open_cursor buffer =
   let cursor, pipe = Inuit.Cursor.make () in
-  accept_buffer session pipe;
+  manual_connect buffer pipe;
   cursor
-
-let create_buffer shell = shell.create_buffer
 
 let create_cursor shell ~name =
-  let cursor, pipe = Inuit.Cursor.make () in
-  create_buffer shell ~name pipe;
-  cursor
+  open_cursor (create_buffer shell ~name)
+
+let fit_to_window buffer =
+  Socket.send buffer.command `Fit
+
+let split buffer ~name dir =
+  let buffer', session = remote_buffer () in
+  Socket.send buffer.command (`Split (dir, name, session));
+  buffer'
