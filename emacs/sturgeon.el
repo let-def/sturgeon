@@ -25,7 +25,8 @@ List is the queue of waiting messages.  New ones should be prepended.
 
 (defun sturgeon--filter-action ()
   "The message handler. It pump and dispatches messages from the queue."
-  (let ((current-queue (nreverse sturgeon--filter-queue)))
+  (let ((current-queue (nreverse sturgeon--filter-queue))
+        (inhibit-quit t))
     (setq sturgeon--filter-queue 'idle)
     (let ((sturgeon--filter-queue nil)
           (proc nil) (lines nil))
@@ -60,7 +61,7 @@ List is the queue of waiting messages.  New ones should be prepended.
             (with-demoted-errors "reading sturgeon input: %S"
               (dolist (line lines)
                 (sturgeon--debug ">" line)
-                (sturgeon--handler proc line)))))
+                (with-local-quit (sturgeon--handler proc line))))))
         ;; Pump messages that got queued during the loop
         (setq current-queue (nreverse sturgeon--filter-queue))
         (setq sturgeon--filter-queue nil)))))
