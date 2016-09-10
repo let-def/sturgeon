@@ -30,7 +30,7 @@
 open Inuit
 
 (** Set of flags recognized by Sturgeon interface. *)
-type flag = [ `Clickable | `Clicked | `Editable | `Prompt
+type flag = [ `Clickable | `Clicked | `Editable | `Prompt | `Focus
             | `Custom of (string * Sturgeon_sexp.basic) ]
 
 (** A buffer shell is the abstract object representing the connection

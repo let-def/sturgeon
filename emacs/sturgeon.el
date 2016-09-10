@@ -561,8 +561,8 @@ Optional arguments are:
 (defun sturgeon-ui--propertize (cursor offset len flags)
   (let ((custom-prop (cdr-safe (assoc 'custom flags))))
     (when custom-prop (add-text-properties offset (+ offset len) flags)))
-  ;; TODO: handle other properties
-  )
+  (when (member 'focus flags)
+    (goto-char offset)))
 
 (defun sturgeon-ui--substitute (cursor offset oldlen text newlen flags)
   (let ((point-begin (point))

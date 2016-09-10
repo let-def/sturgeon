@@ -2,8 +2,8 @@ open Sturgeon_sexp
 open Sturgeon_session
 open Inuit
 
-type flag = [ `Clickable | `Clicked | `Editable | `Prompt
-            | `Custom of (string * Sturgeon_sexp.basic) ]
+type simple_flag = [ `Clickable | `Clicked | `Editable | `Prompt | `Focus ]
+type flag = [ simple_flag | `Custom of (string * Sturgeon_sexp.basic) ]
 
 let dump_sexp sexp =
   let inj _ = S "<abstract>" and map x = x in
@@ -16,14 +16,18 @@ let revision_of_sexp = function
   | C (I remote, I local) -> {Remote. remote; local}
   | sexp -> failwith ("revision_of_sexp: cannot parse " ^ dump_sexp sexp)
 
+let symbol_of_flag = function
+ | `Clickable -> "clickable"
+ | `Editable  -> "editable"
+ | `Prompt    -> "prompt"
+ | `Focus     -> "focus"
+ | `Clicked   -> "clicked"
+
 let sexp_of_flags (flags : flag list) =
   let customs = ref sym_nil in
   let rec aux acc = function
     | [] -> acc
-    | `Clickable :: xs -> aux (C (S "clickable", acc)) xs
-    | `Editable  :: xs -> aux (C (S "editable", acc)) xs
-    | `Prompt :: xs -> aux (C (S "prompt", acc)) xs
-    | `Clicked   :: xs -> aux (C (S "clicked", acc)) xs
+    | #simple_flag as x :: xs -> aux (C (S (symbol_of_flag x), acc)) xs
     | `Custom (key, value) :: xs ->
       customs := C (S key, C (transform_cons ~inj:void value, !customs));
       aux acc xs
@@ -36,7 +40,8 @@ let flags_of_sexp sexp =
     | C (S "clickable", xs) -> aux (`Clickable :: acc) xs
     | C (S "clicked", xs)   -> aux (`Clicked :: acc) xs
     | C (S "editable", xs)  -> aux (`Editable :: acc) xs
-    | C (S "prompt", xs) -> aux (`Prompt :: acc) xs
+    | C (S "prompt", xs)    -> aux (`Prompt :: acc) xs
+    | C (S "focus", xs)     -> aux (`Focus :: acc) xs
     | C (C (S "custom", x), xs) ->
       let x = transform_cons ~inj:(fun dual ->
           begin try
