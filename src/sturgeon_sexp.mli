@@ -36,6 +36,7 @@ type 'a sexp =
   | P of 'a sexp      (** #(property) *)
   | I of int          (** 1           *)
   | F of float        (** 1.0         *)
+  | V of 'a sexp list (** [vectors]   *)
   | M of 'a           (** user-defined construction, outside of s-exp language *)
 
 (** Recursively transform a sexp.

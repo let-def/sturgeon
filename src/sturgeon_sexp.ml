@@ -18,6 +18,7 @@ type 'a sexp =
   | P of 'a sexp
   | I of int
   | F of float
+  | V of 'a sexp list
   | M of 'a
 
 type void
@@ -28,6 +29,7 @@ let transform_list ~inj ?(map=fun x -> x) t =
     | S _ | T _ | I _ | F _ as t' -> map t'
     | C (a, b) -> map (C (aux a, aux_cons b))
     | P a -> map (P (aux a))
+    | V xs -> V (List.map aux xs)
     | M x -> inj x
   and aux_cons = function
     | C (a, b) -> C (aux a, aux_cons b)
@@ -41,6 +43,7 @@ let transform_cons ~inj ?(map=fun x -> x) t =
     | S _ | T _ | I _ | F _ as t' -> map t'
     | C (a, b) -> map (C (aux a, aux b))
     | P a -> map (P (aux a))
+    | V xs -> V (List.map aux xs)
     | M x -> inj x
   in
   aux t
@@ -115,6 +118,12 @@ let rec tell_sexp (tell : _ -> unit) sexp =
   | I i -> tell (string_of_int i)
   | F f -> tell (string_of_float f)
   | P s -> tell "#"; tell_sexp tell s
+  | V [] -> tell "[]"
+  | V (x :: xs) ->
+    tell "[";
+    tell_sexp tell x;
+    List.iter (fun x' -> tell " "; tell_sexp tell x') xs;
+    tell "]"
   | M v -> void v
 
 
@@ -153,9 +162,10 @@ let read_sexp getch =
     | '"' -> read_string ()
 
     | '\000' -> raise End_of_file
-    | '(' ->
-      let lhs, next = read_sexp (getch ()) in
-      read_cons [lhs] next
+
+    | '(' -> read_cons [] (getch ())
+
+    | '[' -> read_vector [] (getch ())
 
     | '#' ->
       let t, c = read_sexp (getch ()) in
@@ -177,6 +187,15 @@ let read_sexp getch =
     | c ->
       let cell, c = read_sexp c in
       read_cons
+        (cell :: cells)
+        (if c = '\000' then getch() else c)
+
+  and read_vector cells = function
+    | ' ' | '\t' | '\n' -> read_vector cells (getch ())
+    | ']' -> V (List.rev cells), '\000'
+    | c ->
+      let cell, c = read_sexp c in
+      read_vector
         (cell :: cells)
         (if c = '\000' then getch() else c)
 
