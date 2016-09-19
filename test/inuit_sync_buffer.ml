@@ -59,7 +59,8 @@ let () =
       let socket = Inuit.Socket.make ~receive:ignore in
       Socket.set_on_connected socket (socket_connect socket);
       Socket.set_on_closed socket (socket_close socket);
-      Stui.create_buffer shell ~name:"test" (Socket.endpoint socket)
+      let buffer = Stui.create_buffer shell ~name:"test" in
+      Stui.manual_connect buffer (Socket.endpoint socket)
     )
   in
   Sturgeon_recipes_server.main_loop server
