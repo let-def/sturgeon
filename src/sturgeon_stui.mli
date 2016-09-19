@@ -62,10 +62,7 @@ val create_cursor : shell -> name:string -> flag cursor
 
 (** Auxiliary interactions *)
 
-type 'a menu =
-  [ `Item of string * 'a
-  | `Sub of string * 'a menu list
-  ]
+type 'a menu = string * [ `Item of 'a | `Sub of 'a menu list ]
 
 val popup_menu :
   shell -> string -> 'a menu list -> 'a Sturgeon_session.neg -> unit

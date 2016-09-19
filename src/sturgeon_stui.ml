@@ -209,23 +209,20 @@ let create_buffer shell ~name =
 let message shell text =
   send shell [S "message"; T text]
 
-type 'a menu =
-  [ `Item of string * 'a
-  | `Sub of string * 'a menu list
-  ]
+type 'a menu = string * [ `Item of 'a | `Sub of 'a menu list ]
 
 let popup_menu shell title items action =
   let next_index = ref 0 in
   let payloads = ref [] in
-  let rec aux = function
-    | `Item (title, value) ->
+  let rec aux (title, entry) = match entry with
+    | `Item value ->
       payloads := value :: !payloads;
       let index = !next_index in
       incr next_index;
       V [T title; I index]
-    | `Sub (title, items) ->
-      let items = List.map aux items in
-      C (T title, sexp_of_list items)
+    | `Sub entries ->
+      let entries = List.map aux entries in
+      C (T title, sexp_of_list entries)
   in
   let items = List.map aux items in
   let values = Array.of_list (List.rev !payloads) in
