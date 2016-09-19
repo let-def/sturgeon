@@ -239,6 +239,22 @@ let popup_menu shell title items action =
   in
   send shell [S "popup-menu"; T title; sexp_of_list items; M action]
 
+let read_file_name shell ~prompt ?dir ?default action =
+  let maybe_T = function
+    | None -> sym_nil
+    | Some text -> T text
+  in
+  let action = Once (function
+      | Feed (T name) -> action (Feed name)
+      | Feed sexp ->
+        Sturgeon_session.cancel sexp;
+        action (Quit (T "Invalid value (incorrect protocol)"))
+      | Quit err -> action (Quit err)
+    )
+  in
+  send shell
+    [S "read-file-name"; T prompt; maybe_T dir; maybe_T default; M action]
+
 let manual_connect buffer socket =
   Socket.connect ~a:buffer.patches ~b:socket
 

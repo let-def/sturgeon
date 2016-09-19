@@ -70,5 +70,10 @@ type 'a menu =
 val popup_menu :
   shell -> string -> 'a menu list -> 'a Sturgeon_session.neg -> unit
 
+val read_file_name :
+  shell -> prompt:string -> ?dir:string -> ?default:string ->
+  string Sturgeon_session.neg -> unit
+
 val fit_to_window : buffer -> unit
+
 val split : buffer -> name:string -> [`Left|`Right|`Top|`Bottom] -> buffer
