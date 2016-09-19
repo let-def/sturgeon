@@ -7,6 +7,8 @@
 ;; library: they might disappear or be changed without further notice.
 ;;
 
+(require 'cl)
+
 (defcustom sturgeon-debug nil
   "If non-nil, every message, received or sent, will be dumped to *Message* buffer")
 
@@ -706,12 +708,22 @@ Optional arguments are:
           ((eq cmd 'message)
            (message "%s" (cadr value)))
           ((eq cmd 'popup-menu)
-           (let ((title (cadr value))
-                 (items (caddr value))
-                 (callback (cadddr value)))
+           (let ((title    (elt value 1))
+                 (items    (elt value 2))
+                 (callback (elt value 3)))
              (app-once callback
                        (with-local-quit
                          (popup-menu (easy-menu-create-menu title items))))))
+          ((eq cmd 'read-file-name)
+           (let ((prompt   (elt value 1))
+                 (dir      (elt value 2))
+                 (default  (elt value 3))
+                 (callback (elt value 4))
+                 filename)
+             (setq filename
+                   (with-local-quit (read-file-name prompt dir default)))
+             (when filename (setq filename (expand-file-name filename))
+             (app-once callback filename))))
           (t (sturgeon-cancel value)))))
 
 (defun sturgeon-ui-cogreetings (buffer)
