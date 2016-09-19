@@ -62,28 +62,38 @@ let rec main_loop server =
   | None -> ()
   | Some socket ->
     server.clients <- List.filter (filter_fd server) server.clients;
-    let r, _, _ = Unix.select (socket :: server.clients) [] [] 1.0 in
-    let rec pump fd (stdin, received, status) =
-      match stdin () with
-      | None -> Hashtbl.remove server.connections fd
-      | exception (Sys_error _) ->
-        Hashtbl.remove server.connections fd
-      | Some sexp ->
-        begin try received sexp;
+    match Unix.select (socket :: server.clients) [] [] 1.0 with
+    | exception Unix.Unix_error (Unix.EINTR, _, _) -> main_loop server
+    | (r, _, _) ->
+      let rec pump fd (stdin, received, status) =
+        match stdin () with
+        | None -> Hashtbl.remove server.connections fd
+        | exception (Sys_error _) ->
+          Hashtbl.remove server.connections fd
+        | Some sexp ->
+          begin try received sexp;
+            with _ -> ()
+          end;
+          match Unix.select [fd] [] [] 0.0 <> ([],[],[]) with
+          | true -> pump fd (stdin, received, status)
+          | false -> ()
+          | exception Unix.Unix_error (Unix.EINTR, _, _) -> ()
+      in
+      let process fd =
+        if fd = socket then
+          try accept server
           with _ -> ()
-        end;
-        if Unix.select [fd] [] [] 0.0 <> ([],[],[]) then
-          pump fd (stdin, received, status)
-    in
-    let process fd =
-      if fd = socket then
-        try accept server
-        with _ -> ()
-      else
-        pump fd (Hashtbl.find server.connections fd)
-    in
-    List.iter process r;
-    main_loop server
+        else
+          pump fd (Hashtbl.find server.connections fd)
+      in
+      List.iter process r;
+      main_loop server
+
+let main_loop ?(keep_sigpipe=false) server =
+  if not keep_sigpipe then
+    (try ignore (Sys.signal Sys.sigpipe Sys.Signal_ignore)
+     with _ -> ());
+  main_loop server
 
 let stop_server server =
   match server.socket with

@@ -44,7 +44,7 @@ val accept :
   server -> unit
 
 val main_loop :
-  server -> unit
+  ?keep_sigpipe:bool -> server -> unit
 
 val stop_server :
   server -> unit
