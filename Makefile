@@ -8,3 +8,7 @@ $(TARGETS):
 
 %:
 	sh build $@
+
+clean:
+	sh build $@
+	$(MAKE) -C test/landmarks clean
