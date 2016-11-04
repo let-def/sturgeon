@@ -12,6 +12,9 @@
 (defcustom sturgeon-debug nil
   "If non-nil, every message, received or sent, will be dumped to *Message* buffer")
 
+(defcustom sturgeon-connector "sturgeon-connector"
+  "Commandline of the sturgeon-connector helper. Adjust it if the binary is not found in your path.")
+
 (defun sturgeon--debug (prefix content)
   "If `sturgeon-debug' is set, dump prefix and content to *Message* buffer"
   (when sturgeon-debug
@@ -748,15 +751,15 @@ Optional arguments are:
 (defun sturgeon-connect (name)
   (interactive (list (completing-read
                       "Socket: "
-                      (with-demoted-errors "Cannot execute 'sturgeon-connector' command, check your setup. (%S)"
-                       (process-lines "sturgeon-connector" "list")))))
+                      (with-demoted-errors "Cannot execute 'sturgeon-connector' command, check your setup or customize sturgeon-connector variable. (%S)"
+                       (process-lines sturgeon-connector "list")))))
   (let ((buffer (get-buffer-create name)))
     (if (and (boundp 'sturgeon--remote) sturgeon--remote)
         (sturgeon-start-process
           name buffer
-          "sturgeon-connector" (list "pipe" name)
+          sturgeon-connector (list "pipe" name)
           :cogreetings (sturgeon-ui-cogreetings buffer))
-      (let ((path (or (car-safe (process-lines "sturgeon-connector" "which" name)) name)))
+      (let ((path (or (car-safe (process-lines sturgeon-connector "which" name)) name)))
          (sturgeon-start (make-network-process
                           :name name :buffer buffer :family 'local :service path)
                          :cogreetings (sturgeon-ui-cogreetings buffer))))
