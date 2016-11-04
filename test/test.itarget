@@ -3,6 +3,3 @@ inuit_nav.byte
 inuit_sync_buffer.byte
 inuit_text.byte
 inuit_tree.byte
-test.ml
-test.byte
-test.native
