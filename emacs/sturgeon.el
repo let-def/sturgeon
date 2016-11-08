@@ -748,11 +748,31 @@ Optional arguments are:
      :cogreetings (sturgeon-ui-cogreetings buffer))
     (switch-to-buffer buffer)))
 
+(defun sturgeon--configure-connector (path)
+  (interactive (list (read-file-name "Specify path to connector command (sturgeon-connector): " nil "sturgeon-connector" t
+                                     (executable-find "sturgeon-connector") 'file-executable-p)))
+  (unless (file-executable-p path)
+    (error "Selected sturgeon-connector (%s) is not executable." path))
+  (customize-set-variable 'sturgeon-connector path)
+  (message "Customized sturgeon-connector to %s" path))
+
+(defun sturgeon--process-lines (&rest args)
+  (let ((lines (apply 'process-lines args)) header)
+    (setq header (car-safe lines))
+    (unless (and (stringp header)
+                 (string-match "^# sturgeon-connector " header))
+      (error "sturgeon-connector gave invalid handshake (%S), check version." header))
+    (cdr lines)))
+
 (defun sturgeon-connect (name)
   (interactive (list (completing-read
                       "Socket: "
-                      (with-demoted-errors "Cannot execute 'sturgeon-connector' command, check your setup or customize sturgeon-connector variable. (%S)"
-                       (process-lines sturgeon-connector "list")))))
+                      (condition-case nil
+                         (sturgeon--process-lines sturgeon-connector "list")
+                       (error
+                         (message "Cannot find 'sturgeon-connector' command, prompting user (sturgeon--configure-connector)")
+                         (call-interactively 'sturgeon--configure-connector)
+                         (sturgeon--process-lines sturgeon-connector "list"))))))
   (let ((buffer (get-buffer-create name)))
     (if (and (boundp 'sturgeon--remote) sturgeon--remote)
         (sturgeon-start-process

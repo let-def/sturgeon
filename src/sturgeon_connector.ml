@@ -1,3 +1,5 @@
+let header = "# sturgeon-connector v0.1"
+
 let dir = Filename.concat (Filename.get_temp_dir_name ())
     (Printf.sprintf "sturgeon.%d" (Unix.getuid ()))
 
@@ -21,6 +23,7 @@ let check name =
     false
 
 let list () =
+  print_endline header;
   match Sys.readdir dir with
   | exception exn ->
     if debug then
