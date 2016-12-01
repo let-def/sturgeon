@@ -1,4 +1,4 @@
-PKG bytes inuit
+PKG bytes inuit result
 S src
 S test
 B _build/**

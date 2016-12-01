@@ -15,6 +15,7 @@ depends: [
   "ocamlbuild" {build}
   "topkg" {build}
   "inuit"
+  "result"
 ]
 depopts: []
 build:

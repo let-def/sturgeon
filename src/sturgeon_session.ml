@@ -1,22 +1,28 @@
+open Result
 open Sturgeon_sexp
 
-type 'a result =
-  | Feed of 'a
-  | Quit of basic
+type reason = [ `Cancel | `Finalize | `Other of basic ]
 
-type 'a neg = 'a result -> unit
+type 'a cont = ('a, reason) result -> unit
 
-type dual =
-  | Once of t neg
-  | Sink of t neg
+type remote =
+  | Once of t cont
+  | Many of t cont
 
-and t = dual sexp
+and t = remote sexp
 
-let cancel_message = Quit (S "cancel")
-let finalize_message = Quit (S "finalize")
+let sexp_of_reason = function
+  | `Cancel -> S "cancel"
+  | `Finalize -> S "finalize"
+  | `Other sexp -> sexp
 
-let add_finalizer (dual : t neg) addr =
-  let finalize _addr = dual finalize_message in
+let reason_of_sexp : basic -> reason = function
+  | S "cancel" -> `Cancel
+  | S "finalize" -> `Finalize
+  | sexp -> `Other sexp
+
+let add_finalizer (remote : t cont) addr =
+  let finalize _addr = remote (Error `Finalize) in
   Gc.finalise finalize addr
 
 (* Cancel : abort computation, release ressources  *)
@@ -25,15 +31,15 @@ let lower_cancel ?stderr (t : t) : basic =
   let map : basic -> basic = function
     | C (S "meta", x) -> C (S "meta", C (S "escape", x))
     | x -> x
-  and inj (dual : dual) : basic =
+  and inj (remote : remote) : basic =
     begin
-      let (Once t | Sink t) = dual in
-      try t cancel_message
+      let (Once t | Many t) = remote in
+      try t (Error `Cancel)
       with exn -> exns := exn :: !exns
     end;
-    match dual with
+    match remote with
     | Once _ -> C (S "meta", C (S "once", S "cancelled"))
-    | Sink _ -> C (S "meta", C (S "sink", S "cancelled"))
+    | Many _ -> C (S "meta", C (S "many", S "cancelled"))
   in
   let result = transform_cons ~inj ~map t in
   if !exns <> [] then
@@ -50,8 +56,8 @@ let cancel ?stderr (t : t) =
     | S _ | T _ -> ()
     | I _ | F _ -> ()
     | V xs -> List.iter aux xs
-    | M (Once t | Sink t) ->
-      try t cancel_message
+    | M (Once t | Many t) ->
+      try t (Error `Cancel)
       with exn -> exns := exn :: !exns
   in
   let result = aux t in
@@ -62,7 +68,7 @@ let cancel ?stderr (t : t) =
   result
 
 type 'a error =
-  [ `Already_closed  of t result
+  [ `Already_closed  of (t, reason) result
   | `Query_after_eof of t
   | `Invalid_command of basic
   | `Feed_unknown    of basic
@@ -74,7 +80,7 @@ type 'a error =
 type status = {
   mutable state: [`Greetings | `Main | `Closed];
   mutable gensym: int;
-  table: (int, dual) Hashtbl.t;
+  table: (int, remote) Hashtbl.t;
 }
 
 type output = basic -> unit
@@ -102,12 +108,12 @@ let connect
     let map : basic -> basic = function
       | C (S "meta", x) -> C (S "meta", C (S "escape", x))
       | x -> x
-    and inj (dual : dual) : basic =
+    and inj (remote : remote) : basic =
       let addr = gensym status in
-      Hashtbl.add status.table addr dual;
-      let sym = match dual with
+      Hashtbl.add status.table addr remote;
+      let sym = match remote with
         | Once _ -> S "once"
-        | Sink _ -> S "sink"
+        | Many _ -> S "many"
       in
       C (S "meta", C (sym, I addr))
     in
@@ -120,36 +126,36 @@ let connect
     let map : t -> t = function
       | C (S "meta", C (S "escape", x)) ->
         C (S "meta", x)
-      | C (S "meta", C (S ("once" | "sink" as kind), addr)) ->
+      | C (S "meta", C (S ("once" | "many" as kind), addr)) ->
         let addr = lower_cancel ?stderr addr in
         let is_once = kind = "once" in
         let closed = ref false in
-        let dual msg =
+        let lift_remote msg =
           if status.state = `Closed then
             match msg with
-            | Feed x -> cancel ?stderr x
-            | Quit _ -> ()
+            | Ok x -> cancel ?stderr x
+            | Error _ -> ()
           else if !closed then
-            if msg == finalize_message then ()
+            if msg = Error `Finalize then ()
             else begin
               begin match msg with
-                | Feed x -> cancel ?stderr x
-                | Quit _ -> ()
+                | Ok x -> cancel ?stderr x
+                | Error _ -> ()
               end;
               match stderr with
               | Some f -> f (`Already_closed msg)
               | None -> ()
             end
           else match msg with
-            | Feed x ->
+            | Ok x ->
               closed := is_once;
               stdout (C (S "feed", C (addr, lower x)))
-            | Quit x ->
+            | Error x ->
               closed := true;
-              stdout (C (S "quit", C (addr, x)))
+              stdout (C (S "quit", C (addr, sexp_of_reason x)))
         in
-        add_finalizer dual addr;
-        M (if is_once then Once dual else Sink dual)
+        add_finalizer lift_remote addr;
+        M (if is_once then Once lift_remote else Many lift_remote)
       | x -> x
     and inj : void -> t = void
     in
@@ -180,8 +186,8 @@ let connect
         begin match get_addr addr with
           | addr, Once t ->
             Hashtbl.remove status.table addr;
-            t (Feed x)
-          | _, Sink t -> t (Feed x)
+            t (Ok x)
+          | _, Many t -> t (Ok x)
           | exception Not_found ->
             cancel ?stderr x;
             begin match stderr with
@@ -192,9 +198,9 @@ let connect
 
       | C (S "quit", C (addr, x)) as msg ->
         begin match get_addr addr with
-          | addr, (Once t | Sink t) ->
+          | addr, (Once t | Many t) ->
             Hashtbl.remove status.table addr;
-            t (Quit x)
+            t (Error (reason_of_sexp x))
           | exception Not_found ->
             begin match stderr with
               | Some f -> f (`Quit_unknown msg)
@@ -205,8 +211,8 @@ let connect
       | S "end" ->
         status.state <- `Closed;
         let exns = ref [] in
-        Hashtbl.iter (fun _ (Sink t | Once t) ->
-            try t cancel_message
+        Hashtbl.iter (fun _ (Many t | Once t) ->
+            try t (Error `Cancel)
             with exn -> exns := exn :: !exns
           ) status.table;
         Hashtbl.reset status.table;
@@ -232,7 +238,7 @@ let connect
 
 let close remote = remote (S "end")
 
-let pending_sessions status =
+let pending_continuations status =
   Hashtbl.length status.table
 
 let is_closed status = status.state = `Closed

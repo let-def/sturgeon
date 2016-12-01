@@ -63,7 +63,7 @@ List is the queue of waiting messages.  New ones should be prepended.
               (process-put proc 'sturgeon-lines (cdr lines))
               (setcdr lines nil))
             ;; Dispatch lines to user handler
-            (with-demoted-errors "reading sturgeon input: %S"
+            (with-demoted-errors "sturgeon: reading input %S"
               (dolist (line lines)
                 (sturgeon--debug ">" line)
                 (with-local-quit (sturgeon--handler proc line))))))
@@ -79,19 +79,20 @@ List is the queue of waiting messages.  New ones should be prepended.
   (setq sturgeon--filter-queue
         (cons (cons proc lines) sturgeon--filter-queue)))
 
-;; Routines and macros that help implementing sturgeon negations.
+;; Routines and macros that help implementing sturgeon continuations.
 ;;
-;; To implement a <once> or a <sink>, one can use some macros:
-;;   (lambda-once parameter-name
+;; To implement a <once> or a <many>, one can use some macros:
+;;   (k-let-once var
 ;;      body)
-;;   (lambda-sink parameter-name
+;;   (k-let-many var
 ;;      body)
 ;;
-;; These behave like `lambda', except only a single name can be bound.
-;; They wrap body with some validation and dispatch logic.
+;; These define a sturgeon continuation that can be send to remote side.  When
+;; invoked, `body' is evaluated with `var' bound to the value of remote
+;; argument.
 ;;
 ;; An extended form is accepted, to handle corner cases:
-;;   (lambda-sink v
+;;   (k-let-many v ; or k-let-once
 ;;      'quit
 ;;      (quit-body
 ;;          ;; v is bound to error message
@@ -100,13 +101,13 @@ List is the queue of waiting messages.  New ones should be prepended.
 ;;
 ;; Examples:
 ;;
-;; (lambda-once v
+;; (k-let-once v
 ;;    (message "remote sent value %S" v)
 ;;    (sturgeon-cancel v) ; we aren't doing anything with v,
 ;;                        ; let's release any sub-sessions asap
 ;;    )
 ;;
-;; (lambda-once v
+;; (k-let-once v
 ;;    'quit
 ;;    (if (eq v 'finalize)
 ;;        (message "once was collected before getting an answer")
@@ -117,7 +118,7 @@ List is the queue of waiting messages.  New ones should be prepended.
 ;;    )
 ;;
 
-(defun sturgeon--lambda-extract-handlers (body)
+(defun sturgeon--k-extract-handlers (body)
   "Extract other special cases from body, e.g. 'quit (quit-body)"
   (let ((handlers nil) (iter body))
     (while (symbolp (car iter))
@@ -127,9 +128,9 @@ List is the queue of waiting messages.  New ones should be prepended.
       (setq iter (cddr iter)))
     (cons handlers iter)))
 
-(defmacro lambda-once (var &rest body)
-  "A macro like emacs-lisp lambda but for once values. See sturgeon.el for documentation, or contribute better emacs-lisp doc thanks you :)"
-  (let ((handlers (sturgeon--lambda-extract-handlers body)))
+(defmacro k-let-once (var &rest body)
+  "A macro defining linear sturgeon continuations. See sturgeon.el for more documentation."
+  (let ((handlers (sturgeon--k-extract-handlers body)))
     (setq body (cdr handlers))
     (setq handlers (car handlers))
     `(cons 'once (lambda (sturgeon-kind ,var)
@@ -142,31 +143,31 @@ List is the queue of waiting messages.  New ones should be prepended.
                         (message "sturgeon: unhandled message %S %S" sturgeon-kind ,var))
                       (sturgeon-cancel ,var)))))))
 
-(defmacro lambda-sink (var &rest body)
-  "A macro like emacs-lisp lambda but for sink values. See sturgeon.el for documentation, or contribute better emacs-lisp doc thanks you :)"
-  (let ((handlers (sturgeon--lambda-extract-handlers body)))
+(defmacro k-let-many (var &rest body)
+  "A macro defining multi-shot sturgeon continuations. See sturgeon.el for more documentation."
+  (let ((handlers (sturgeon--k-extract-handlers body)))
     (setq body (cdr handlers))
     (setq handlers (car handlers))
-  `(cons 'sink (lambda (sturgeon-kind sturgeon-values)
+  `(cons 'many (lambda (sturgeon-kind sturgeon-values)
                  (cond
                    ,@handlers
                    ((member sturgeon-kind '(feed batch))
                     (when (eq sturgeon-kind 'feed)
                       (setq sturgeon-values (list sturgeon-values)))
                     (dolist (,var sturgeon-values)
-                      (with-demoted-errors "sturgeon: sink application %S"
+                      (with-demoted-errors "sturgeon: error in multi-shot continuation %S"
                        ,@body)))
                    (t
                     (unless (eq sturgeon-kind 'quit)
                       (message "sturgeon: unhandled message %S %S" sturgeon-kind sturgeon-values))
                     (sturgeon-cancel sturgeon-values)))))))
 
-(defmacro lambda-batch (var &rest body)
+(defmacro k-let-batch (var &rest body)
   "Don't use: WIP for receiving many values at once, might be removed in the future."
-  (let ((handlers (sturgeon--lambda-extract-handlers body)))
+  (let ((handlers (sturgeon--k-extract-handlers body)))
     (setq body (cdr handlers))
     (setq handlers (car handlers))
-  `(cons 'sink (lambda (sturgeon-kind ,var)
+  `(cons 'many (lambda (sturgeon-kind ,var)
                  (cond
                    ,@handlers
                    ((member sturgeon-kind '(feed batch))
@@ -178,42 +179,40 @@ List is the queue of waiting messages.  New ones should be prepended.
                       (message "sturgeon: unhandled message %S %S" sturgeon-kind sturgeon-values))
                     (sturgeon-cancel sturgeon-values)))))))
 
-(put 'lambda-once 'lisp-indent-function 'defun)
-(put 'lambda-sink 'lisp-indent-function 'defun)
-(put 'lambda-batch 'lisp-indent-function 'defun)
+(put 'k-let-once 'lisp-indent-function 'defun)
+(put 'k-let-many 'lisp-indent-function 'defun)
+(put 'k-let-batch 'lisp-indent-function 'defun)
 
-(defun sturgeon--app-p (sexp)
-  "Assertion validating well-formed <once> or <sink>"
-  (and (consp sexp)
-       (functionp (cdr sexp))
-       (member (car sexp) '(once sink))))
+(defun sturgeon--k-p (sexp)
+  "Assertion validating well-formed sturgeon continuation"
+  (and (consp sexp) (functionp (cdr sexp)) (member (car sexp) '(once many))))
 
-(defun app-once (f arg)
-  "Send a value to a sturgeon <once>"
-  (assert (sturgeon--app-p f))
+(defun k-resume-once (f arg)
+  "Resume a linear sturgeon continuation"
+  (assert (sturgeon--k-p f))
   (assert (eq (car f) 'once))
   (funcall (cdr f) 'feed arg))
 
-(defun app-any (f arg)
-  "Send a value to a sturgeon <once> or <sink>"
-  (assert (sturgeon--app-p f))
+(defun k-resume (f arg)
+  "Resume a sturgeon continuation (without checking linearity)"
+  (assert (sturgeon--k-p f))
   (funcall (cdr f) 'feed arg))
 
-(defun app-sink (f arg)
-  "Send a value to a sturgeon <sink>"
-  (assert (sturgeon--app-p f))
-  (assert (eq (car f) 'sink))
+(defun k-resume-many (f arg)
+  "Resum a multi-shot sturgeon continuation"
+  (assert (sturgeon--k-p f))
+  (assert (eq (car f) 'many))
   (funcall (cdr f) 'feed arg))
 
-(defun app-batch (f arg)
-  "Send a batch to a sturgeon <sink>. WIP, might be removed in the future"
-  (assert (sturgeon--app-p f))
-  (assert (eq (car f) 'sink))
+(defun k-batch (f arg)
+  "Resume a multi-shot sturgeon continuation multiple times values. WIP, might be removed in the future"
+  (assert (sturgeon--k-p f))
+  (assert (eq (car f) 'many))
   (funcall (cdr f) 'batch arg))
 
-(defun app-quit (f &optional arg)
-  "Close a sturgeon <sink> or cancel a sturgeon <once>. An eventual error message can be provided to signal exceptional conditions."
-  (assert (sturgeon--app-p f))
+(defun k-quit (f &optional arg)
+  "Quit a sturgeon continuation. An eventual error message can be provided to signal exceptional conditions."
+  (assert (sturgeon--k-p f))
   (funcall (cdr f) 'quit arg))
 
 ;; Garbage collection
@@ -228,7 +227,7 @@ List is the queue of waiting messages.  New ones should be prepended.
     'sturgeon-table
        the car is the seed of the local gensym.
        the cdr is table mapping addresses already generated and sent to the
-       remote processes with the local handlers (once or sink values)
+       remote processes with the local handlers (once or many values)
     'sturgeon-roots
        remote roots retained locally
   ")
@@ -303,9 +302,8 @@ List is the queue of waiting messages.  New ones should be prepended.
   "Traverse the sexp and cancel all sessions it contains"
   (sturgeon--debug "cancelling" sexp)
   (cond
-   ((sturgeon--app-p sexp)
-    (with-demoted-errors "cancelling closure %S"
-      (app-quit sexp 'cancel)))
+   ((sturgeon--k-p sexp)
+    (with-demoted-errors "sturgeon: error cancelling continuation %S" (k-quit sexp 'cancel)))
    ((eq (car-safe sexp) 'meta) nil)
    ((consp sexp)
     (sturgeon-cancel (car sexp))
@@ -316,7 +314,7 @@ List is the queue of waiting messages.  New ones should be prepended.
   "Traverse sexp and lower all sessions it contains: they are turned into
   plain adresses, registered in dispatch table"
   (cond
-   ((sturgeon--app-p sexp)
+   ((sturgeon--k-p sexp)
     (cons 'meta (sturgeon--register process sexp)))
    ((eq (car-safe sexp) 'meta)
     (cons 'meta (cons 'escape (cdr-safe sexp))))
@@ -326,7 +324,7 @@ List is the queue of waiting messages.  New ones should be prepended.
    (t sexp)))
 
 (defun sturgeon--lift (process kind addr)
-  "Turn a remote address addr from process into a local <once> or <sink>
+  "Turn a remote address addr from process into a local <once> or <many>
   object (according to kind)"
   (lexical-let ((addr addr) (process process) (kind kind))
     (cons
@@ -353,7 +351,7 @@ List is the queue of waiting messages.  New ones should be prepended.
          (eq (car-safe (cdr sexp)) 'escape))
     (cons 'meta (cddr sexp)))
    ((and (eq (car-safe sexp) 'meta)
-         (member (car-safe (cdr sexp)) '(once sink)))
+         (member (car-safe (cdr sexp)) '(once many)))
     (sturgeon--lift process (cadr sexp) (cddr sexp)))
    ((consp sexp)
     (cons (sturgeon--higher process (car sexp))
@@ -368,7 +366,7 @@ List is the queue of waiting messages.  New ones should be prepended.
          (eq (car-safe (cdr sexp)) 'escape))
     nil)
    ((and (eq (car-safe sexp) 'meta)
-         (member (car-safe (cdr sexp)) '(once sink)))
+         (member (car-safe (cdr sexp)) '(once many)))
     (sturgeon--send process (cons 'quit (cons (cddr sexp) 'cancel))))
    ((consp sexp)
     (sturgeon--cancel-low process (car sexp))
@@ -394,19 +392,19 @@ List is the queue of waiting messages.  New ones should be prepended.
         (payload (cdr-safe answer)))
     (cond
      ((and (eq cmd 'greetings) (equal 1 (car-safe payload)))
-      (with-demoted-errors "greetings %S"
+      (with-demoted-errors "sturgeon: greetings %S"
         (let ((cogreetings (process-get process 'sturgeon-cogreetings)))
           (if (not cogreetings)
               (sturgeon--cancel-low process answer)
             (process-put process 'sturgeon-cogreetings nil)
             (funcall cogreetings (sturgeon--higher process (cdr payload)))))))
      ((eq cmd 'feed)
-      (with-demoted-errors "feed %S"
+      (with-demoted-errors "sturgeon: feed %S"
         (sturgeon--wake-up process
                         (car payload) 'feed
                         (sturgeon--higher process (cdr payload)))))
      ((eq cmd 'quit)
-      (with-demoted-errors "quit %S"
+      (with-demoted-errors "sturgeon: quit %S"
         (sturgeon--wake-up process
                         (car payload) 'quit (cdr payload))))
 
@@ -464,7 +462,7 @@ Optional arguments are:
 (defvar-local sturgeon-ui--last-point 0)
 (defconst sturgeon-ui--active nil)
 
-;; cursor = [0:buffer 1:sink 2:remote-revision 3:changes 4:latest-remote]
+;; cursor = [0:buffer 1:remote-cont 2:remote-revision 3:changes 4:latest-remote]
 (defun sturgeon-ui--change-cursor (cursor beg end len)
   (setq beg (1- beg))
   (setq end (1- end))
@@ -493,7 +491,7 @@ Optional arguments are:
                        beg op
                        (cons 'editable nil))))
     (aset cursor 4 sturgeon-ui--revision)
-    (app-sink (elt cursor 1) action)))
+    (k-resume-many (elt cursor 1) action)))
 
 (defun sturgeon-ui--before-change (beg end)
   (when sturgeon-ui--cursor
@@ -512,7 +510,7 @@ Optional arguments are:
     (aset cursor 3 (delete-if pred (elt cursor 3))))
   (when (< (+ 16 (elt cursor 4)) (cdr revisions))
     (aset cursor 4 (cdr revisions))
-    (app-sink
+    (k-resume-many
      (elt cursor 1)
      `(ack ,(cons (cdr revisions) sturgeon-ui--revision)))))
 
@@ -557,11 +555,11 @@ Optional arguments are:
 
 (defun sturgeon-ui--cursor-action (x)
   (let* ((cursor (button-get x 'sturgeon-cursor))
-         (sink   (elt cursor 1))
+         (cont   (elt cursor 1))
          (rev    (cons (elt cursor 2) sturgeon-ui--revision))
          (offset (1- (marker-position x)))
          (action `(patch ,rev ,offset (propertize . 0) (clicked))))
-    (app-sink sink action)))
+    (k-resume-many cont action)))
 
 (defun sturgeon-ui--propertize (cursor offset len flags)
   (let ((custom-prop (cdr-safe (assoc 'custom flags))))
@@ -663,19 +661,19 @@ Optional arguments are:
    (add-hook 'before-change-functions 'sturgeon-ui--before-change nil 'local)
    (add-hook 'after-change-functions 'sturgeon-ui--after-change nil 'local))
 
-(defun sturgeon-ui--manage-buffer (buffer sink)
-  (lexical-let ((cursor (vector buffer sink 0 nil 0)))
+(defun sturgeon-ui--manage-buffer (buffer cont)
+  (lexical-let ((cursor (vector buffer cont 0 nil 0)))
     (with-current-buffer buffer
       (erase-buffer)
       (sturgeon-mode)
       (setq sturgeon-ui--cursor cursor)
-      (lambda-sink value
+      (k-let-many value
         (cond
          ((eq (car value) 'split)
           (let ((split (cadr value))
                 (buffer (get-buffer-create
                           (generate-new-buffer-name (caddr value))))
-                (sink (cadddr value))
+                (cont (cadddr value))
                 (window (or (get-buffer-window (elt cursor 0)) (selected-window))))
             (cond
               ((eq split 'left) (split-window-horizontally))
@@ -684,8 +682,8 @@ Optional arguments are:
               ((eq split 'bottom) (setq window (split-window-vertically))))
             (with-selected-window window
              (switch-to-buffer buffer)
-             (app-any
-              sink (cons 'sink (sturgeon-ui--manage-buffer buffer sink))))))
+             (k-resume cont
+              (cons 'many (sturgeon-ui--manage-buffer buffer cont))))))
          ((eq (car value) 'fit)
           (let ((window (get-buffer-window (elt cursor 0)))
                 (fit-window-to-buffer-horizontally t))
@@ -701,20 +699,20 @@ Optional arguments are:
   (let ((cmd (car-safe value)))
     (cond ((eq cmd 'create-buffer)
            (let ((name (cadr value))
-                 (sink (caddr value)))
+                 (cont (caddr value)))
              (if (and buffer (not sturgeon-ui--cursor))
                  (with-current-buffer buffer (rename-buffer name t))
                (setq buffer
                      (get-buffer-create (generate-new-buffer-name name))))
-             (app-any
-              sink (cons 'sink (sturgeon-ui--manage-buffer buffer sink)))))
+             (k-resume cont
+              (cons 'many (sturgeon-ui--manage-buffer buffer cont)))))
           ((eq cmd 'message)
            (message "%s" (cadr value)))
           ((eq cmd 'popup-menu)
            (let ((title    (elt value 1))
                  (items    (elt value 2))
                  (callback (elt value 3)))
-             (app-once callback
+             (k-resume-once callback
                        (with-local-quit
                          (popup-menu (easy-menu-create-menu title items))))))
           ((eq cmd 'read-file-name)
@@ -722,11 +720,12 @@ Optional arguments are:
                  (dir      (elt value 2))
                  (default  (elt value 3))
                  (callback (elt value 4))
+		 (use-dialog-box nil)
                  filename)
              (setq filename
                    (with-local-quit (read-file-name prompt dir default)))
              (when filename (setq filename (expand-file-name filename))
-             (app-once callback filename))))
+             (k-resume-once callback filename))))
           (t (sturgeon-cancel value)))))
 
 (defun sturgeon-ui-cogreetings (buffer)
@@ -734,8 +733,9 @@ Optional arguments are:
     (lambda (value)
       (cond
        ((eq (car-safe value) 'buffer-shell)
-        (app-once (cadr value)
-                  (lambda-sink value (sturgeon-ui-handler value buffer))))
+        (k-resume-once (cadr value)
+                  (k-let-many value
+                   (sturgeon-ui-handler value buffer))))
        (t (sturgeon-cancel value))
        ))))
 

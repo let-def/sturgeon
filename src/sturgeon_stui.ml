@@ -1,5 +1,7 @@
+open Result
 open Sturgeon_sexp
 open Sturgeon_session
+type session = t
 open Inuit
 
 type simple_flag = [ `Clickable | `Clicked | `Editable | `Prompt | `Focus ]
@@ -43,13 +45,13 @@ let flags_of_sexp sexp =
     | C (S "prompt", xs)    -> aux (`Prompt :: acc) xs
     | C (S "focus", xs)     -> aux (`Focus :: acc) xs
     | C (C (S "custom", x), xs) ->
-      let x = transform_cons ~inj:(fun dual ->
+      let x = transform_cons ~inj:(fun remote ->
           begin try
-              let (Once neg | Sink neg) = dual in
-              neg cancel_message
+              let (Once cont | Many cont) = remote in
+              cont (Error `Cancel)
             with _ -> ()
           end;
-          prerr_endline "invalid input, received flags with negations";
+          prerr_endline "sturgeon: invalid session, continuation in flags";
           sym_nil)
           ~map:(fun x -> x)
           x
@@ -143,9 +145,9 @@ let remote_buffer () =
     Socket.make ~receive:(fun x -> queue := sexp_of_buffer_command x :: !queue)
   in
   let handler = function
-    | Feed (C (S "sink", M (Sink sink))) ->
+    | Ok (C (S "many", M (Many cont))) ->
       let rec aux = function
-        | x :: xs -> sink (Feed x); aux xs
+        | x :: xs -> cont (Ok x); aux xs
         | [] ->
           let xs = !queue in
           queue := [];
@@ -153,12 +155,12 @@ let remote_buffer () =
       in
       aux [];
       Socket.set_receive patch_socket
-        (fun msg -> sink (Feed (sexp_of_remote_patch msg)));
+        (fun msg -> cont (Ok (sexp_of_remote_patch msg)));
       Socket.set_receive command_socket
-        (fun msg -> sink (Feed (sexp_of_buffer_command msg)))
-    | Feed sexp ->
+        (fun msg -> cont (Ok (sexp_of_buffer_command msg)))
+    | Ok sexp ->
       Socket.send patch_socket (remote_patch_of_sexp sexp)
-    | Quit _ ->
+    | Error _ ->
       Socket.close patch_socket;
       Socket.close command_socket
   in
@@ -169,11 +171,11 @@ let remote_buffer () =
     ~b:(Socket.endpoint command);
   Socket.connect ~a:remote ~b:(Socket.endpoint patch_socket);
   ({ command; patches; },
-   M (Sink handler))
+   M (Many handler))
 
 type shell_status =
-  | Pending of Sturgeon_session.t list
-  | Connected of Sturgeon_session.t neg
+  | Pending of session list
+  | Connected of session cont
 
 type shell = {
   mutable status : shell_status;
@@ -182,13 +184,13 @@ type shell = {
 let buffer_greetings () =
   let shell = { status = (Pending []) } in
   let session = sexp_of_list [S "buffer-shell"; M (Once (function
-      | Feed (M (Sink t)) ->
+      | Ok (M (Many t)) ->
         begin match shell.status with
           | Connected _ ->
             failwith "Stui.buffer_greetings: invalid session, already connected"
           | Pending xs ->
             shell.status <- Connected t;
-            List.iter (fun x -> t (Feed x)) (List.rev xs)
+            List.iter (fun x -> t (Ok x)) (List.rev xs)
         end
       | _ -> failwith "Stui.buffer_greetings: invalid session, unknown command"
     ))]
@@ -198,7 +200,7 @@ let buffer_greetings () =
 let send shell command =
   let command = sexp_of_list command in
   match shell.status with
-  | Connected sink -> sink (Feed command)
+  | Connected cont -> cont (Ok command)
   | Pending xs -> shell.status <- Pending (command :: xs)
 
 let create_buffer shell ~name =
@@ -227,11 +229,11 @@ let popup_menu shell title items action =
   let items = List.map aux items in
   let values = Array.of_list (List.rev !payloads) in
   let action = Once (function
-      | Feed (I n) -> action (Feed values.(n))
-      | Feed sexp ->
+      | Ok (I n) -> action (Ok values.(n))
+      | Ok sexp ->
         Sturgeon_session.cancel sexp;
-        action (Quit (T "Invalid value (incorrect protocol)"))
-      | Quit err -> action (Quit err)
+        action (Error (`Other (T "Invalid value (incorrect protocol)")))
+      | Error err -> action (Error err)
     )
   in
   send shell [S "popup-menu"; T title; sexp_of_list items; M action]
@@ -242,11 +244,11 @@ let read_file_name shell ~prompt ?dir ?default action =
     | Some text -> T text
   in
   let action = Once (function
-      | Feed (T name) -> action (Feed name)
-      | Feed sexp ->
+      | Ok (T name) -> action (Ok name)
+      | Ok sexp ->
         Sturgeon_session.cancel sexp;
-        action (Quit (T "Invalid value (incorrect protocol)"))
-      | Quit err -> action (Quit err)
+        action (Error (`Other (T "Invalid value (incorrect protocol)")))
+      | Error err -> action (Error err)
     )
   in
   send shell

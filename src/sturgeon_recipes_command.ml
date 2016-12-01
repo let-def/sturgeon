@@ -13,7 +13,7 @@ let command ?greetings ?cogreetings () =
     | None -> exit 0
     | Some sexp ->
       stdin' sexp;
-      if Session.pending_sessions status > 0 then
+      if Session.pending_continuations status > 0 then
         aux ()
       else exit 0
   in

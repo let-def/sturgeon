@@ -65,11 +65,11 @@ val create_cursor : shell -> name:string -> flag cursor
 type 'a menu = string * [ `Item of 'a | `Sub of 'a menu list ]
 
 val popup_menu :
-  shell -> string -> 'a menu list -> 'a Sturgeon_session.neg -> unit
+  shell -> string -> 'a menu list -> 'a Sturgeon_session.cont -> unit
 
 val read_file_name :
   shell -> prompt:string -> ?dir:string -> ?default:string ->
-  string Sturgeon_session.neg -> unit
+  string Sturgeon_session.cont -> unit
 
 val fit_to_window : buffer -> unit
 

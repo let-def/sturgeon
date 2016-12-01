@@ -25,63 +25,57 @@
 
 )* }}} *)
 
+open Result
 open Sturgeon_sexp
 
-(** Session extends S-exp with abstract objects.
-    One can now put function-like values inside s-expressions.
+(** Session setup a connection between two parties and extends Sexp with
+    continuations from the remote party.
+    One can put function-like values inside these Sexp, which, when applied,
+    invoke some remote code.
 
-    When serializing, the library will take care of representing these values
-    by handles that can be used from the remote side.
+    The library take care of allocating simple handles to reference
+    continuation from remote party.
 *)
 
-(** The actions that can be sent to abstract objects. *)
-type 'a result =
-  | Feed of 'a
-  (** Feed is the action to transmit a value to an abstract object.
-      See [dual] type below.
-      A promise ([Once]) can be fed only once, a stream ([Sink]) can be fed
-      an arbitrary number of times. *)
-  | Quit of basic
-  (** Quit release an abstract object.
-      If it is a promise ([Once]), it will be canceled (waiter will receive an
-      error), if it is a stream ([Sink]) it will be closed.  *)
+(** The reason for a continuation to not be invoked anymore.
+    `Cancel: the continuation was not expected, consumer does not know how to
+      deal with it.
+    `Finalize: the GC determined that the continuation cannot be reached
+      anymore.
+    `Other: some error defined by implementor of remote code. This is analogous
+      to exceptions.
+      The error message is a plain Sexp: it is not possible to "catch" the
+      error and resume control flow.
+*)
+type reason = [ `Cancel | `Finalize | `Other of basic ]
 
-(** Negation: consuming values.
-    Normal values are [positive]. When you have one of them you own an instance
-    of some type.
-    Negations are the opposite. When you have one of them all you can do is
-    provide an instance of some type.
+(** A continuation either takes a result value or a reason for terminating. *)
+type 'a cont = ('a, reason) result -> unit
+
+(** Remote values.
+
+    Basic Sexp contain plain values that you can inspect.
+    Sessions also contain remote values. Those are opaque but can consume
+    values that you produce and send to the remote side.
 
     Positive and negative values are the building blocks of more complex
     control flows.
-    For instance, a function from ['a -> 'b] be encoded as [('a * 'b neg) neg]:
-    if you give a ['a], you will own a ['b].
+    For instance, a function from ['a -> 'b] can be encoded as
+      [('a * 'b remote) remote]:
+    if you give an ['a], you will be given a ['b].
 *)
-type 'a neg = 'a result -> unit
+type remote =
+  | Once of t cont (** [Once] is the constructor for remote linear
+                       continuations: they can consume only one value. *)
+  | Many of t cont (** [Many] is the constructor for remote multi-shot
+                       continuations: they can consume arbitrarily many values.
+                       They can be used to build streams. *)
 
-type dual =
-  | Once of t neg (** [Once] is the constructor for linear negations:
-                      they can consume only one value. *)
-  | Sink of t neg (** [Sink] is the constructor for streams:
-                      they can consume arbitrarily many values. *)
-
-(** Finally the type of sessions: it is the S-exp extended with dual values. *)
-and t = dual sexp
-
-(** The message to send to cancel a negation *)
-val cancel_message : 'a result
-
-(** The message send by the GC when a negation is collected
-    (and will never be reachable again). *)
-val finalize_message : 'a result
-
-(** Cancel a session: traverse all sub-expressions to cancel negations. *)
-val cancel :
-  ?stderr:([> `Exceptions_during_cancellation of t * exn list] -> unit) ->
-  t -> unit
+(** Finally the type of sessions: it is the S-exp extended with remote values. *)
+and t = remote sexp
 
 type 'a error =
-  [ `Already_closed  of t result
+  [ `Already_closed  of (t, reason) result
   | `Query_after_eof of t
   | `Invalid_command of basic
   | `Feed_unknown    of basic
@@ -90,19 +84,25 @@ type 'a error =
   | `Exceptions_during_shutdown of exn list
   ]
 
+(** Cancel a session: traverse all sub-expressions to cancel continuations. *)
+val cancel :
+  ?stderr:([> `Exceptions_during_cancellation of t * exn list] -> unit) ->
+  t -> unit
+
 type output = basic -> unit
 type status
 
 (** Basic creation of a session.
     [greetings] and [cogreetings] are respectively the first session sent and
     received.
-    The whole purpose of connect is to convert high-level sessions to plain
-    values back and forth, by allocating and managing concrete addresses. *)
+    The purpose of connect is to convert high-level sessions back and forth
+    plain values, by allocating and managing concrete addresses. *)
 val connect :
   ?greetings:t -> ?cogreetings:(t -> unit) ->
   ?stderr:(_ error -> unit) -> output -> output * status
 
 val close : output -> unit
 
-val pending_sessions : status -> int
+val pending_continuations : status -> int
+
 val is_closed : status -> bool
