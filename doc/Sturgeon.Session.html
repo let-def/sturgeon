@@ -1,0 +1,130 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link rel="previous" href="Sturgeon.Sexp.html">
+<link rel="next" href="Sturgeon.Stui.html">
+<link rel="Up" href="Sturgeon.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Sturgeon" rel="Chapter" href="Sturgeon.html">
+<link title="Sturgeon_recipes_command" rel="Chapter" href="Sturgeon_recipes_command.html">
+<link title="Sturgeon_recipes_server" rel="Chapter" href="Sturgeon_recipes_server.html">
+<link title="Sturgeon_session" rel="Chapter" href="Sturgeon_session.html">
+<link title="Sturgeon_sexp" rel="Chapter" href="Sturgeon_sexp.html">
+<link title="Sturgeon_stui" rel="Chapter" href="Sturgeon_stui.html"><title>Sturgeon.Session</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="Sturgeon.Sexp.html" title="Sturgeon.Sexp">Previous</a>
+&nbsp;<a class="up" href="Sturgeon.html" title="Sturgeon">Up</a>
+&nbsp;<a class="post" href="Sturgeon.Stui.html" title="Sturgeon.Stui">Next</a>
+</div>
+<h1>Module <a href="type_Sturgeon.Session.html">Sturgeon.Session</a></h1>
+
+<pre><span class="keyword">module</span> Session: <code class="type"><a href="Sturgeon_session.html">Sturgeon_session</a></code></pre><hr width="100%">
+<br>
+Session setup a connection between two parties and extends Sexp with
+    continuations from the remote party.
+    One can put function-like values inside these Sexp, which, when applied,
+    invoke some remote code.
+<p>
+
+    The library take care of allocating simple handles to reference
+    continuation from remote party.<br>
+
+<pre><span id="TYPEreason"><span class="keyword">type</span> <code class="type"></code>reason</span> = <code class="type">[ `Cancel | `Finalize | `Other of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a> ]</code> </pre>
+<div class="info ">
+The reason for a continuation to not be invoked anymore.
+    `Cancel: the continuation was not expected, consumer does not know how to
+      deal with it.
+    `Finalize: the GC determined that the continuation cannot be reached
+      anymore.
+    `Other: some error defined by implementor of remote code. This is analogous
+      to exceptions.
+      The error message is a plain Sexp: it is not possible to "catch" the
+      error and resume control flow.<br>
+</div>
+
+
+<pre><span id="TYPEcont"><span class="keyword">type</span> <code class="type">'a</code> cont</span> = <code class="type">('a, <a href="Sturgeon_session.html#TYPEreason">reason</a>) Pervasives.result -> unit</code> </pre>
+<div class="info ">
+A continuation either takes a result value or a reason for terminating.<br>
+</div>
+
+
+<pre><code><span id="TYPEremote"><span class="keyword">type</span> <code class="type"></code>remote</span> = </code></pre><table class="typetable">
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTremote.Once"><span class="constructor">Once</span></span> <span class="keyword">of</span> <code class="type"><a href="Sturgeon_session.html#TYPEt">t</a> <a href="Sturgeon_session.html#TYPEcont">cont</a></code></code></td>
+<td class="typefieldcomment" align="left" valign="top" ><code>(*</code></td><td class="typefieldcomment" align="left" valign="top" ><div class="info ">
+<code class="code"><span class="constructor">Once</span></code> is the constructor for remote linear
+                       continuations: they can consume only one value.<br>
+</div>
+</td><td class="typefieldcomment" align="left" valign="bottom" ><code>*)</code></td>
+</tr>
+<tr>
+<td align="left" valign="top" >
+<code><span class="keyword">|</span></code></td>
+<td align="left" valign="top" >
+<code><span id="TYPEELTremote.Many"><span class="constructor">Many</span></span> <span class="keyword">of</span> <code class="type"><a href="Sturgeon_session.html#TYPEt">t</a> <a href="Sturgeon_session.html#TYPEcont">cont</a></code></code></td>
+<td class="typefieldcomment" align="left" valign="top" ><code>(*</code></td><td class="typefieldcomment" align="left" valign="top" ><div class="info ">
+<code class="code"><span class="constructor">Many</span></code> is the constructor for remote multi-shot
+                       continuations: they can consume arbitrarily many values.
+                       They can be used to build streams.<br>
+</div>
+</td><td class="typefieldcomment" align="left" valign="bottom" ><code>*)</code></td>
+</tr></table>
+
+<div class="info ">
+Remote values.
+<p>
+
+    Basic Sexp contain plain values that you can inspect.
+    Sessions also contain remote values. Those are opaque but can consume
+    values that you produce and send to the remote side.
+<p>
+
+    Positive and negative values are the building blocks of more complex
+    control flows.
+    For instance, a function from <code class="code"><span class="keywordsign">'</span>a&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b</code> can be encoded as
+      <code class="code">(<span class="keywordsign">'</span>a&nbsp;*&nbsp;<span class="keywordsign">'</span>b&nbsp;remote)&nbsp;remote</code>:
+    if you give an <code class="code"><span class="keywordsign">'</span>a</code>, you will be given a <code class="code"><span class="keywordsign">'</span>b</code>.<br>
+</div>
+
+
+<pre><span id="TYPEt"><span class="keyword">type</span> <code class="type"></code>t</span> = <code class="type"><a href="Sturgeon_session.html#TYPEremote">remote</a> <a href="Sturgeon_sexp.html#TYPEsexp">Sturgeon_sexp.sexp</a></code> </pre>
+<div class="info ">
+Finally the type of sessions: it is the S-exp extended with remote values.<br>
+</div>
+
+
+<pre><span id="TYPEerror"><span class="keyword">type</span> <code class="type">'a</code> error</span> = <code class="type">[ `Already_closed of<br>           (<a href="Sturgeon_session.html#TYPEt">t</a>, <a href="Sturgeon_session.html#TYPEreason">reason</a>) Pervasives.result<br>       | `Exceptions_during_cancellation of <a href="Sturgeon_session.html#TYPEt">t</a> * exn list<br>       | `Exceptions_during_shutdown of exn list<br>       | `Feed_unknown of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a><br>       | `Invalid_command of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a><br>       | `Query_after_eof of <a href="Sturgeon_session.html#TYPEt">t</a><br>       | `Quit_unknown of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a> ]</code> </pre>
+
+
+<pre><span id="VALcancel"><span class="keyword">val</span> cancel</span> : <code class="type">?stderr:([> `Exceptions_during_cancellation of <a href="Sturgeon_session.html#TYPEt">t</a> * exn list ] -><br>                unit) -><br>       <a href="Sturgeon_session.html#TYPEt">t</a> -> unit</code></pre><div class="info ">
+Cancel a session: traverse all sub-expressions to cancel continuations.<br>
+</div>
+
+<pre><span id="TYPEoutput"><span class="keyword">type</span> <code class="type"></code>output</span> = <code class="type"><a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a> -> unit</code> </pre>
+
+
+<pre><span id="TYPEstatus"><span class="keyword">type</span> <code class="type"></code>status</span> </pre>
+
+
+<pre><span id="VALconnect"><span class="keyword">val</span> connect</span> : <code class="type">?greetings:<a href="Sturgeon_session.html#TYPEt">t</a> -><br>       ?cogreetings:(<a href="Sturgeon_session.html#TYPEt">t</a> -> unit) -><br>       ?stderr:('a <a href="Sturgeon_session.html#TYPEerror">error</a> -> unit) -><br>       <a href="Sturgeon_session.html#TYPEoutput">output</a> -> <a href="Sturgeon_session.html#TYPEoutput">output</a> * <a href="Sturgeon_session.html#TYPEstatus">status</a></code></pre><div class="info ">
+Basic creation of a session.
+    <code class="code">greetings</code> and <code class="code">cogreetings</code> are respectively the first session sent and
+    received.
+    The purpose of connect is to convert high-level sessions back and forth
+    plain values, by allocating and managing concrete addresses.<br>
+</div>
+
+<pre><span id="VALclose"><span class="keyword">val</span> close</span> : <code class="type"><a href="Sturgeon_session.html#TYPEoutput">output</a> -> unit</code></pre>
+<pre><span id="VALpending_continuations"><span class="keyword">val</span> pending_continuations</span> : <code class="type"><a href="Sturgeon_session.html#TYPEstatus">status</a> -> int</code></pre>
+<pre><span id="VALis_closed"><span class="keyword">val</span> is_closed</span> : <code class="type"><a href="Sturgeon_session.html#TYPEstatus">status</a> -> bool</code></pre></body></html>

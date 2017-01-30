@@ -1,0 +1,81 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link rel="previous" href="Sturgeon_sexp.html">
+<link rel="Up" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Sturgeon" rel="Chapter" href="Sturgeon.html">
+<link title="Sturgeon_recipes_command" rel="Chapter" href="Sturgeon_recipes_command.html">
+<link title="Sturgeon_recipes_server" rel="Chapter" href="Sturgeon_recipes_server.html">
+<link title="Sturgeon_session" rel="Chapter" href="Sturgeon_session.html">
+<link title="Sturgeon_sexp" rel="Chapter" href="Sturgeon_sexp.html">
+<link title="Sturgeon_stui" rel="Chapter" href="Sturgeon_stui.html"><title>Sturgeon_stui</title>
+</head>
+<body>
+<div class="navbar"><a class="pre" href="Sturgeon_sexp.html" title="Sturgeon_sexp">Previous</a>
+&nbsp;<a class="up" href="index.html" title="Index">Up</a>
+&nbsp;</div>
+<h1>Module <a href="type_Sturgeon_stui.html">Sturgeon_stui</a></h1>
+
+<pre><span class="keyword">module</span> Sturgeon_stui: <code class="code"><span class="keyword">sig</span></code> <a href="Sturgeon_stui.html">..</a> <code class="code"><span class="keyword">end</span></code></pre><div class="info module top">
+An API to interconnect Sturgeon and Inuit.<br>
+</div>
+<hr width="100%">
+
+<pre><span id="TYPEflag"><span class="keyword">type</span> <code class="type"></code>flag</span> = <code class="type">[ `Clickable<br>       | `Clicked<br>       | `Custom of string * <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a><br>       | `Editable<br>       | `Focus<br>       | `Prompt ]</code> </pre>
+<div class="info ">
+Set of flags recognized by Sturgeon interface.<br>
+</div>
+
+
+<pre><span id="TYPEshell"><span class="keyword">type</span> <code class="type"></code>shell</span> </pre>
+<div class="info ">
+A buffer shell is the abstract object representing the connection
+    to the user-interface display.
+    Through a shell, you can create one or more buffers.
+<p>
+
+    TODO:<ul>
+<li>bind <code class="code">message</code> function from emacs for reporting information</li>
+</ul>
+<br>
+</div>
+
+
+<pre><span id="VALbuffer_greetings"><span class="keyword">val</span> buffer_greetings</span> : <code class="type">unit -> <a href="Sturgeon_session.html#TYPEt">Sturgeon_session.t</a> * <a href="Sturgeon_stui.html#TYPEshell">shell</a></code></pre><div class="info ">
+<code class="code">buffer_greetings</code> provide you with a session and a shell.
+    Send the session as a greetings to emacs instance and the shell will
+    open and display buffers in this instance.<br>
+</div>
+
+<pre><span id="VALmessage"><span class="keyword">val</span> message</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEshell">shell</a> -> string -> unit</code></pre>
+<pre><span id="TYPEbuffer"><span class="keyword">type</span> <code class="type"></code>buffer</span> </pre>
+
+
+<pre><span id="VALcreate_buffer"><span class="keyword">val</span> create_buffer</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEshell">shell</a> -> name:string -> <a href="Sturgeon_stui.html#TYPEbuffer">buffer</a></code></pre><div class="info ">
+Create patch socket (low-level) from a shell.<br>
+</div>
+
+<pre><span id="VALopen_cursor"><span class="keyword">val</span> open_cursor</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEbuffer">buffer</a> -> <a href="Sturgeon_stui.html#TYPEflag">flag</a> Inuit.cursor</code></pre><div class="info ">
+</div>
+
+<pre><span id="VALmanual_connect"><span class="keyword">val</span> manual_connect</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEbuffer">buffer</a> -> <a href="Sturgeon_stui.html#TYPEflag">flag</a> Inuit.patch Inuit.socket -> unit</code></pre>
+<pre><span id="VALcreate_cursor"><span class="keyword">val</span> create_cursor</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEshell">shell</a> -> name:string -> <a href="Sturgeon_stui.html#TYPEflag">flag</a> Inuit.cursor</code></pre><div class="info ">
+Create cursor ready to output in a buffer.<br>
+</div>
+<br>
+Auxiliary interactions<br>
+
+<pre><span id="TYPEmenu"><span class="keyword">type</span> <code class="type">'a</code> menu</span> = <code class="type">string * [ `Item of 'a | `Sub of 'a <a href="Sturgeon_stui.html#TYPEmenu">menu</a> list ]</code> </pre>
+
+
+<pre><span id="VALpopup_menu"><span class="keyword">val</span> popup_menu</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEshell">shell</a> -><br>       string -> 'a <a href="Sturgeon_stui.html#TYPEmenu">menu</a> list -> 'a <a href="Sturgeon_session.html#TYPEcont">Sturgeon_session.cont</a> -> unit</code></pre>
+<pre><span id="VALread_file_name"><span class="keyword">val</span> read_file_name</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEshell">shell</a> -><br>       prompt:string -><br>       ?dir:string -> ?default:string -> string <a href="Sturgeon_session.html#TYPEcont">Sturgeon_session.cont</a> -> unit</code></pre>
+<pre><span id="VALfit_to_window"><span class="keyword">val</span> fit_to_window</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEbuffer">buffer</a> -> unit</code></pre>
+<pre><span id="VALsplit"><span class="keyword">val</span> split</span> : <code class="type"><a href="Sturgeon_stui.html#TYPEbuffer">buffer</a> -><br>       name:string -> [ `Bottom | `Left | `Right | `Top ] -> <a href="Sturgeon_stui.html#TYPEbuffer">buffer</a></code></pre></body></html>

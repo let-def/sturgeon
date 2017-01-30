@@ -1,0 +1,51 @@
+<html><head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Sturgeon" rel="Chapter" href="Sturgeon.html">
+<link title="Sturgeon_recipes_command" rel="Chapter" href="Sturgeon_recipes_command.html">
+<link title="Sturgeon_recipes_server" rel="Chapter" href="Sturgeon_recipes_server.html">
+<link title="Sturgeon_session" rel="Chapter" href="Sturgeon_session.html">
+<link title="Sturgeon_sexp" rel="Chapter" href="Sturgeon_sexp.html">
+<link title="Sturgeon_stui" rel="Chapter" href="Sturgeon_stui.html"><title>Sturgeon_stui</title>
+</head>
+<body>
+<code class="code"><span class="keyword">sig</span><br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;flag&nbsp;=<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[&nbsp;<span class="keywordsign">`</span><span class="constructor">Clickable</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Clicked</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Custom</span>&nbsp;<span class="keyword">of</span>&nbsp;string&nbsp;*&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Editable</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Focus</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Prompt</span>&nbsp;]<br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;shell<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;buffer_greetings&nbsp;:&nbsp;unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_session</span>.t&nbsp;*&nbsp;<span class="constructor">Sturgeon_stui</span>.shell<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;message&nbsp;:&nbsp;<span class="constructor">Sturgeon_stui</span>.shell&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit<br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;buffer<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;create_buffer&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Sturgeon_stui</span>.shell&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;name:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_stui</span>.buffer<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;open_cursor&nbsp;:&nbsp;<span class="constructor">Sturgeon_stui</span>.buffer&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_stui</span>.flag&nbsp;<span class="constructor">Inuit</span>.cursor<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;manual_connect&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Sturgeon_stui</span>.buffer&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Sturgeon_stui</span>.flag&nbsp;<span class="constructor">Inuit</span>.patch&nbsp;<span class="constructor">Inuit</span>.socket&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;create_cursor&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Sturgeon_stui</span>.shell&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;name:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_stui</span>.flag&nbsp;<span class="constructor">Inuit</span>.cursor<br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;menu&nbsp;=<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;string&nbsp;*&nbsp;[&nbsp;<span class="keywordsign">`</span><span class="constructor">Item</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Sub</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_stui</span>.menu&nbsp;list&nbsp;]<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;popup_menu&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Sturgeon_stui</span>.shell&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_stui</span>.menu&nbsp;list&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_session</span>.cont&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;read_file_name&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Sturgeon_stui</span>.shell&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;prompt:string&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;?dir:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;?default:string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;string&nbsp;<span class="constructor">Sturgeon_session</span>.cont&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;fit_to_window&nbsp;:&nbsp;<span class="constructor">Sturgeon_stui</span>.buffer&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;split&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Sturgeon_stui</span>.buffer&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;name:string&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;[&nbsp;<span class="keywordsign">`</span><span class="constructor">Bottom</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Left</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Right</span>&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="keywordsign">`</span><span class="constructor">Top</span>&nbsp;]&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_stui</span>.buffer<br>
+<span class="keyword">end</span></code></body></html>

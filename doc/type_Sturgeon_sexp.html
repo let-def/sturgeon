@@ -1,0 +1,55 @@
+<html><head>
+<link rel="stylesheet" href="style.css" type="text/css">
+<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="Start" href="index.html">
+<link title="Index of types" rel=Appendix href="index_types.html">
+<link title="Index of values" rel=Appendix href="index_values.html">
+<link title="Index of modules" rel=Appendix href="index_modules.html">
+<link title="Sturgeon" rel="Chapter" href="Sturgeon.html">
+<link title="Sturgeon_recipes_command" rel="Chapter" href="Sturgeon_recipes_command.html">
+<link title="Sturgeon_recipes_server" rel="Chapter" href="Sturgeon_recipes_server.html">
+<link title="Sturgeon_session" rel="Chapter" href="Sturgeon_session.html">
+<link title="Sturgeon_sexp" rel="Chapter" href="Sturgeon_sexp.html">
+<link title="Sturgeon_stui" rel="Chapter" href="Sturgeon_stui.html"><title>Sturgeon_sexp</title>
+</head>
+<body>
+<code class="code"><span class="keyword">sig</span><br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;sexp&nbsp;=<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">C</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;*&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">S</span>&nbsp;<span class="keyword">of</span>&nbsp;string<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">T</span>&nbsp;<span class="keyword">of</span>&nbsp;string<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">P</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">I</span>&nbsp;<span class="keyword">of</span>&nbsp;int<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">F</span>&nbsp;<span class="keyword">of</span>&nbsp;float<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">V</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;list<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">|</span>&nbsp;<span class="constructor">M</span>&nbsp;<span class="keyword">of</span>&nbsp;<span class="keywordsign">'</span>a<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;transform_list&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;inj:(<span class="keywordsign">'</span>a&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp)&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;?map:(<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp)&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;transform_cons&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;inj:(<span class="keywordsign">'</span>a&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp)&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;?map:(<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp)&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>b&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;sym_nil&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;sym_t&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;sexp_of_list&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;?tail:<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;list&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;sexp_mem&nbsp;:&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;bool<br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;void<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;void&nbsp;:&nbsp;<span class="constructor">Sturgeon_sexp</span>.void&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a<br>
+&nbsp;&nbsp;<span class="keyword">type</span>&nbsp;basic&nbsp;=&nbsp;<span class="constructor">Sturgeon_sexp</span>.void&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;generalize_basic&nbsp;:&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="keywordsign">'</span>a&nbsp;<span class="constructor">Sturgeon_sexp</span>.sexp<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;tell_sexp&nbsp;:&nbsp;(string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit)&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;read_sexp&nbsp;:&nbsp;(unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;char)&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic&nbsp;*&nbsp;char<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;to_buf&nbsp;:&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Buffer</span>.t&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;to_string&nbsp;:&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;string<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;of_string&nbsp;:&nbsp;string&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;of_file_descr&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;on_read:(<span class="constructor">Unix</span>.file_descr&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit)&nbsp;<span class="keywordsign">-&gt;</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Unix</span>.file_descr&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic&nbsp;option<br>
+&nbsp;&nbsp;<span class="keyword">val</span>&nbsp;of_channel&nbsp;:<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="constructor">Pervasives</span>.in_channel&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;unit&nbsp;<span class="keywordsign">-&gt;</span>&nbsp;<span class="constructor">Sturgeon_sexp</span>.basic&nbsp;option<br>
+<span class="keyword">end</span></code></body></html>
