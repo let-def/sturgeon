@@ -60,7 +60,7 @@ The reason for a continuation to not be invoked anymore.
 </div>
 
 
-<pre><span id="TYPEcont"><span class="keyword">type</span> <code class="type">'a</code> cont</span> = <code class="type">('a, <a href="Sturgeon_session.html#TYPEreason">reason</a>) Pervasives.result -> unit</code> </pre>
+<pre><span id="TYPEcont"><span class="keyword">type</span> <code class="type">'a</code> cont</span> = <code class="type">('a, <a href="Sturgeon_session.html#TYPEreason">reason</a>) Result.result -> unit</code> </pre>
 <div class="info ">
 A continuation either takes a result value or a reason for terminating.<br>
 </div>
@@ -114,7 +114,7 @@ Finally the type of sessions: it is the S-exp extended with remote values.<br>
 </div>
 
 
-<pre><span id="TYPEerror"><span class="keyword">type</span> <code class="type">'a</code> error</span> = <code class="type">[ `Already_closed of<br>           (<a href="Sturgeon_session.html#TYPEt">t</a>, <a href="Sturgeon_session.html#TYPEreason">reason</a>) Pervasives.result<br>       | `Exceptions_during_cancellation of <a href="Sturgeon_session.html#TYPEt">t</a> * exn list<br>       | `Exceptions_during_shutdown of exn list<br>       | `Feed_unknown of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a><br>       | `Invalid_command of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a><br>       | `Query_after_eof of <a href="Sturgeon_session.html#TYPEt">t</a><br>       | `Quit_unknown of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a> ]</code> </pre>
+<pre><span id="TYPEerror"><span class="keyword">type</span> <code class="type">'a</code> error</span> = <code class="type">[ `Already_closed of<br>           (<a href="Sturgeon_session.html#TYPEt">t</a>, <a href="Sturgeon_session.html#TYPEreason">reason</a>) Result.result<br>       | `Exceptions_during_cancellation of <a href="Sturgeon_session.html#TYPEt">t</a> * exn list<br>       | `Exceptions_during_shutdown of exn list<br>       | `Feed_unknown of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a><br>       | `Invalid_command of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a><br>       | `Query_after_eof of <a href="Sturgeon_session.html#TYPEt">t</a><br>       | `Quit_unknown of <a href="Sturgeon_sexp.html#TYPEbasic">Sturgeon_sexp.basic</a> ]</code> </pre>
 
 
 <pre><span id="VALcancel"><span class="keyword">val</span> cancel</span> : <code class="type">?stderr:([> `Exceptions_during_cancellation of <a href="Sturgeon_session.html#TYPEt">t</a> * exn list ] -><br>                unit) -><br>       <a href="Sturgeon_session.html#TYPEt">t</a> -> unit</code></pre><div class="info ">
