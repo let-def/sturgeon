@@ -720,7 +720,7 @@ Optional arguments are:
                  (dir      (elt value 2))
                  (default  (elt value 3))
                  (callback (elt value 4))
-		 (use-dialog-box nil)
+                 (use-dialog-box nil)
                  filename)
              (setq filename
                    (with-local-quit (read-file-name prompt dir default)))
@@ -748,10 +748,32 @@ Optional arguments are:
      :cogreetings (sturgeon-ui-cogreetings buffer))
     (switch-to-buffer buffer)))
 
+;; Resolve path of sturgeon-connector
+
+(defun sturgeon--look-for-relative-connector ()
+  "Compute path of sturgeon-connector binary relative to sturgeon.el when installed by opam"
+  (let ((p (find-lisp-object-file-name 'sturgeon-mode nil)))
+    ;; p ~ prefix/share/emacs/site-lisp/sturgeon.el
+    (when p (setq p (directory-file-name (file-name-directory p))))
+    ;; p ~ prefix/share/emacs/site-lisp
+    (when p (setq p (directory-file-name (file-name-directory p))))
+    ;; p ~ prefix/share/emacs
+    (when p (setq p (directory-file-name (file-name-directory p))))
+    ;; p ~ prefix/share
+    (when p (setq p (file-name-directory p)))
+    ;; p ~ prefix/
+    (when p (setq p (file-name-as-directory (concat p "bin"))))
+    ;; p ~ prefix/bin
+    (when p (setq p (concat p "sturgeon-connector")))
+    ;; p ~ prefix/bin/sturgeon-connector
+    (customize-set-variable 'sturgeon-connector p)))
+
 (defun sturgeon--configure-connector (path)
-  (interactive (list (read-file-name "Specify path to connector command (sturgeon-connector): " nil "sturgeon-connector" t
-                                     (executable-find "sturgeon-connector") 'file-executable-p)))
-  (unless (file-executable-p path)
+  (interactive
+   (list (read-file-name "Specify path to connector command (sturgeon-connector): "
+                         nil "sturgeon-connector" t
+                         (executable-find "sturgeon-connector") 'file-executable-p)))
+  (when (not (file-executable-p path))
     (error "Selected sturgeon-connector (%s) is not executable." path))
   (customize-set-variable 'sturgeon-connector path)
   (message "Customized sturgeon-connector to %s" path))
@@ -765,14 +787,18 @@ Optional arguments are:
     (cdr lines)))
 
 (defun sturgeon-connect (name)
-  (interactive (list (completing-read
-                      "Socket: "
-                      (condition-case nil
-                         (sturgeon--process-lines sturgeon-connector "list")
-                       (error
-                         (message "Cannot find 'sturgeon-connector' command, prompting user (sturgeon--configure-connector)")
-                         (call-interactively 'sturgeon--configure-connector)
-                         (sturgeon--process-lines sturgeon-connector "list"))))))
+  (interactive
+   (list (completing-read
+          "Socket: "
+          (condition-case nil (sturgeon--process-lines sturgeon-connector "list")
+            (error
+             (message "Cannot find 'sturgeon-connector' command, resolving relatively to sturgeon.el")
+             (sturgeon--look-for-relative-connector)
+             (condition-case nil (sturgeon--process-lines sturgeon-connector "list")
+               (error
+                (message "Cannot find 'sturgeon-connector' command, prompting user (sturgeon--configure-connector)")
+                (call-interactively 'sturgeon--configure-connector)
+                (sturgeon--process-lines sturgeon-connector "list"))))))))
   (let ((buffer (get-buffer-create name)))
     (if (and (boundp 'sturgeon--remote) sturgeon--remote)
         (sturgeon-start-process
