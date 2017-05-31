@@ -2,25 +2,13 @@ open Sturgeon
 open Session
 open Inuit
 
-let new_cp c = Char.code c land 0xC0 <> 0x80
-
-let find_pos s pos count =
-  let pos = ref pos in
-  let count = ref count in
-  while !count > 0 do
-    if new_cp s.[!pos] then
-      decr count;
-    incr pos
-  done;
-  !pos
-
 let buffer = ref ""
 
 let apply_change =
   let change s patch =
     let open Inuit.Patch in
-    let pos1 = find_pos s patch.offset 0 in
-    let pos2 = find_pos s (Patch.removed patch) pos1 in
+    let pos1 = utf8_offset s patch.offset in
+    let pos2 = utf8_offset s ~offset:pos1 (Patch.removed patch) in
     String.sub s 0 pos1 ^ Patch.inserted_text patch ^ String.sub s pos2 (String.length s - pos2)
   in
   fun txt -> buffer := change !buffer txt
