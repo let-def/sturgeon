@@ -1,3 +1,9 @@
+v0.3 2017-10-06 Paris
+------------------------
+
+Make emacs mode configuration more friendly.
+In sync example, fix utf-8 related issues.
+
 v0.2 2017-01-30 London
 ------------------------
 
