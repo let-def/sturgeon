@@ -68,6 +68,8 @@ let rec sexp_mem x = function
   | C (_, xs) -> sexp_mem x xs
   | _ -> false
 
+let is_num c = (c >= '0' && c <= '9')
+
 let escaped s =
   let count = ref 0 in
   let len = String.length s in
@@ -76,16 +78,17 @@ let escaped s =
     | '\n' | '"' | '\\' ->
       count := !count + 1
     | c when c < ' ' || c > '\x7F' ->
-      count := !count + 3
+      if (i + 1 < len - 1) && is_num s.[i+1]
+      then count := !count + 5
+      else count := !count + 3
     | _ -> ()
   done;
   if !count = 0 then s
   else
-    let s = Bytes.unsafe_of_string s in
     let s' = Bytes.create (len + !count) in
     let j = ref 0 in
     for i = 0 to len - 1 do
-      match Bytes.get s i with
+      match s.[i] with
       | '"' | '\\' as c ->
         Bytes.set s' (!j + 0) '\\';
         Bytes.set s' (!j + 1) c;
@@ -100,7 +103,12 @@ let escaped s =
         Bytes.set s' (!j + 1) Char.(unsafe_chr (code '0' + (c / 64) land 0x7));
         Bytes.set s' (!j + 2) Char.(unsafe_chr (code '0' + ( c / 8) land 0x7));
         Bytes.set s' (!j + 3) Char.(unsafe_chr (code '0' + (     c) land 0x7));
-        j := !j + 4
+        if (i + 1 < len - 1) && is_num s.[i+1] then (
+          Bytes.set s' (!j + 4) '\\';
+          Bytes.set s' (!j + 5) ' ';
+          j := !j + 6
+        )
+        else j := !j + 4
       | c ->
         Bytes.set s' !j c;
         incr j
@@ -226,6 +234,7 @@ let read_sexp getch =
           | 't' -> Buffer.add_char buf '\t'
           | 'r' -> Buffer.add_char buf '\r'
           | 'n' -> Buffer.add_char buf '\n'
+          | ' ' -> ()
           | '0'..'9' as c0 ->
             let c0 = Char.code c0 - Char.code '0' in
             let c1 = Char.code (getch ()) - Char.code '0' in
