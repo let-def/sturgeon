@@ -9,11 +9,17 @@
 
 (require 'cl)
 
+(defgroup sturgeon nil
+  "`sturgeon' OCaml RPC"
+  :group 'communication :prefix "sturgeon-")
+
 (defcustom sturgeon-debug nil
-  "If non-nil, every message, received or sent, will be dumped to *Message* buffer")
+  "If non-nil, every message, received or sent, will be dumped to *Message* buffer"
+  :group 'sturgeon)
 
 (defcustom sturgeon-connector "sturgeon-connector"
-  "Commandline of the sturgeon-connector helper. Adjust it if the binary is not found in your path.")
+  "Commandline of the sturgeon-connector helper. Adjust it if the binary is not found in your path."
+  :group 'sturgeon)
 
 (defun sturgeon--debug (prefix content)
   "If `sturgeon-debug' is set, dump prefix and content to *Message* buffer"
