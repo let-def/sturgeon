@@ -18,7 +18,8 @@
 (defun sturgeon--debug (prefix content)
   "If `sturgeon-debug' is set, dump prefix and content to *Message* buffer"
   (when sturgeon-debug
-    (message "%s %S" prefix content)))
+    (let ((inhibit-message t))
+      (message "%s %S" prefix content))))
 
 (defvar sturgeon--filter-queue 'idle
   "Queue is filled with messages received from the process, and an
@@ -792,11 +793,13 @@ Optional arguments are:
           "Socket: "
           (condition-case nil (sturgeon--process-lines sturgeon-connector "list")
             (error
-             (message "Cannot find 'sturgeon-connector' command, resolving relatively to sturgeon.el")
+             (let ((inhibit-message t))
+               (message "Cannot find 'sturgeon-connector' command, resolving relatively to sturgeon.el"))
              (sturgeon--look-for-relative-connector)
              (condition-case nil (sturgeon--process-lines sturgeon-connector "list")
                (error
-                (message "Cannot find 'sturgeon-connector' command, prompting user (sturgeon--configure-connector)")
+                (let ((inhibit-message t))
+                  (message "Cannot find 'sturgeon-connector' command, prompting user (sturgeon--configure-connector)"))
                 (call-interactively 'sturgeon--configure-connector)
                 (sturgeon--process-lines sturgeon-connector "list"))))))))
   (let ((buffer (get-buffer-create name)))
