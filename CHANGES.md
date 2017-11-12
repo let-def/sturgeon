@@ -1,3 +1,9 @@
+v0.4 2017-11-12 Paris
+------------------------
+
+Fix a bug with serialization and deserialization of escaped string (triggered by a non-ascii character followed by three numbers).
+Make emacs setup a bit more automatic and/or user-friendly.
+
 v0.3 2017-10-06 Paris
 ------------------------
 
