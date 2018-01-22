@@ -28,15 +28,17 @@
 open Result
 open Sturgeon_sexp
 
-(** Session setup a connection between two parties and extends Sexp with
-    continuations from the remote party.
-    One can put function-like values inside these Sexp, which, when applied,
-    invoke some remote code.
+(** A session is a channel between two parties that can exchange enriched
+    s-expressions.
+    These s-expressions can reference code from the remote party:
+    on top of plain values and lists, one can put function-like values, which,
+    when applied, invoke some remote code.
 
-    The library take care of allocating simple handles to reference
-    continuation from remote party.
+    The library takes care of allocating simple handles to reference remote
+    code.
 *)
 
+type reason = [ `Cancel | `Finalize | `Other of basic ]
 (** The reason for a continuation to not be invoked anymore.
     `Cancel: the continuation was not expected, consumer does not know how to
       deal with it.
@@ -47,14 +49,18 @@ open Sturgeon_sexp
       The error message is a plain Sexp: it is not possible to "catch" the
       error and resume control flow.
 *)
-type reason = [ `Cancel | `Finalize | `Other of basic ]
 
-(** A continuation either takes a result value or a reason for terminating. *)
 type 'a cont = ('a, reason) result -> unit
+(** A continuation either takes a result value or a reason for terminating. *)
 
-(** Remote values.
 
-    Basic Sexp contain plain values that you can inspect.
+type remote =
+  | Once of t cont (** [Once] is the constructor for remote linear
+                       continuations: they can consume only one value. *)
+  | Many of t cont (** [Many] is the constructor for remote multi-shot
+                       continuations: they can consume arbitrarily many values.
+                       They can be used to build streams. *)
+(** Basic Sexp contain plain values that you can inspect.
     Sessions also contain remote values. Those are opaque but can consume
     values that you produce and send to the remote side.
 
@@ -64,15 +70,9 @@ type 'a cont = ('a, reason) result -> unit
       [('a * 'b remote) remote]:
     if you give an ['a], you will be given a ['b].
 *)
-type remote =
-  | Once of t cont (** [Once] is the constructor for remote linear
-                       continuations: they can consume only one value. *)
-  | Many of t cont (** [Many] is the constructor for remote multi-shot
-                       continuations: they can consume arbitrarily many values.
-                       They can be used to build streams. *)
 
-(** Finally the type of sessions: it is the S-exp extended with remote values. *)
 and t = remote sexp
+(** The type of sessions: it is the S-exp extended with remote values. *)
 
 type 'a error =
   [ `Already_closed  of (t, reason) result
@@ -84,22 +84,23 @@ type 'a error =
   | `Exceptions_during_shutdown of exn list
   ]
 
-(** Cancel a session: traverse all sub-expressions to cancel continuations. *)
 val cancel :
   ?stderr:([> `Exceptions_during_cancellation of t * exn list] -> unit) ->
   t -> unit
+(** Cancel a session: traverse all sub-expressions to terminate
+    continuations. *)
 
 type output = basic -> unit
 type status
 
-(** Basic creation of a session.
-    [greetings] and [cogreetings] are respectively the first session sent and
-    received.
-    The purpose of connect is to convert high-level sessions back and forth
-    plain values, by allocating and managing concrete addresses. *)
 val connect :
   ?greetings:t -> ?cogreetings:(t -> unit) ->
   ?stderr:(_ error -> unit) -> output -> output * status
+(** Basic creation of a session.
+    [greetings] and [cogreetings] are respectively the first sessions sent and
+    received.
+    The purpose of connect is to convert high-level sessions back and forth
+    plain values, by allocating and managing concrete addresses. *)
 
 val close : output -> unit
 
