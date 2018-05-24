@@ -746,6 +746,7 @@ Optional arguments are:
        (t (sturgeon-cancel value))
        ))))
 
+;;;###autoload
 (defun sturgeon-launch (filename)
   (interactive "fProgram path: ")
   (let ((buffer (get-buffer-create filename)))
@@ -793,6 +794,7 @@ Optional arguments are:
       (error "sturgeon-connector gave invalid handshake (%S), check version." header))
     (cdr lines)))
 
+;;;###autoload
 (defun sturgeon-connect (name)
   (interactive
    (list (completing-read
@@ -820,18 +822,21 @@ Optional arguments are:
                          :cogreetings (sturgeon-ui-cogreetings buffer))))
       (switch-to-buffer buffer)))
 
+;;;###autoload
 (defun sturgeon-remote-launch (server)
   (interactive "fServer: ")
   (let ((default-directory server)
         (sturgeon--remote t))
     (call-interactively 'sturgeon-launch)))
 
+;;;###autoload
 (defun sturgeon-remote-connect (server)
   (interactive "fServer: ")
   (let ((default-directory server)
         (sturgeon--remote t))
     (call-interactively 'sturgeon-connect)))
 
+;;;###autoload
 (defun sturgeon-previous-actionable ()
   (interactive)
   (let (point)
@@ -842,6 +847,7 @@ Optional arguments are:
     (when point
       (goto-char point))))
 
+;;;###autoload
 (defun sturgeon-next-actionable ()
   (interactive)
   (let (point)
