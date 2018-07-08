@@ -9,16 +9,15 @@ bug-reports: "https://github.com/let-def/sturgeon/issues"
 tags: []
 available: [ ocaml-version >= "4.01.0"]
 depends: [
-  "ocamlfind" {build}
-  "ocamlbuild" {build}
-  "topkg" {build}
+  "jbuilder" {build}
   "inuit"
   "result"
 ]
 depopts: []
-build:
-[[ "ocaml" "pkg/pkg.ml" "build"
-           "--pinned" "%{pinned}%" ]]
+build: [
+  ["jbuilder" "subst" "-n" name] {pinned}
+  ["jbuilder" "build" "-p" name "-j" jobs]
+]
 post-messages: [
   "sturgeon installed.
 
