@@ -1,5 +1,4 @@
 open Sturgeon
-open Session
 open Inuit.Cursor
 open Inuit_widget
 
@@ -12,11 +11,10 @@ let rec children prefix t =
   done
 
 let () =
-  Sturgeon_recipes_command.text_command
-  @@ fun ~args shell ->
+  Sturgeon_recipes_command.text_command @@ fun ~args:_ shell ->
   let cursor = Stui.create_cursor shell ~name:"tree-server" in
   let nav =
-    Nav.make "0 to 9" @@ fun {Nav. body; nav} ->
+    Nav.make "0 to 9" @@ fun {Nav. body; _} ->
     text body "\n";
     children "/" (Tree.make body)
   in

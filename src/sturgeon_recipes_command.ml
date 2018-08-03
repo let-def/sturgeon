@@ -20,6 +20,5 @@ let command ?greetings ?cogreetings () =
   aux ()
 
 let text_command f =
-  let open Sexp in
   let greetings, shell = Stui.buffer_greetings () in
   command ~greetings ~cogreetings:(fun args -> f ~args shell) ()

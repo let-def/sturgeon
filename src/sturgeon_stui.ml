@@ -64,7 +64,7 @@ let flags_of_sexp sexp =
           prerr_endline ("Incorrect custom flag: " ^ dump_sexp x);
           custom xs
         | xs ->
-          prerr_endline ("Incorrect custom flags: " ^ dump_sexp x);
+          prerr_endline ("Incorrect custom flags: " ^ dump_sexp xs);
           acc
       in
       aux (custom x) xs

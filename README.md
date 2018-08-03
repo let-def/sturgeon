@@ -1,6 +1,6 @@
 Sturgeon — A toolkit for communicating with Emacs
 -------------------------------------------------------------------------------
-%%VERSION%%
+v0.4.1-1-ga87e613
 
 Sturgeon implements various tools for manipulating Emacs from OCaml:
 - `Sturgeon_sexp` implements the Emacs dialect of S-expressions

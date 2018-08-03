@@ -1,5 +1,4 @@
 open Sturgeon
-open Session
 open Inuit.Cursor
 open Inuit_widget
 

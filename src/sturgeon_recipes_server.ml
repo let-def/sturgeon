@@ -42,6 +42,7 @@ let accept server =
         Mutex.unlock olock;
       with exn ->
         Mutex.unlock olock;
+        raise exn
     in
     let greetings, cogreetings = server.client () in
     let received, status = Session.connect ?greetings ?cogreetings send in
@@ -107,7 +108,6 @@ let stop_server server =
     Unix.close socket
 
 let text_server name f =
-  let open Sexp in
   server ~client:(fun () ->
       let greetings, shell = Stui.buffer_greetings () in
       Some greetings, Some (fun args -> f ~args shell)

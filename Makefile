@@ -1,11 +1,12 @@
-PKG=ocaml pkg/pkg.ml
-
 all: build
 
 .PHONY: all build clean test
 
-build clean:
-	$(PKG) $@
+build:
+	dune build
+
+clean:
+	dune clean
 
 test:
-	ocamlbuild -use-ocamlfind test/test.otarget
+	dune runtest

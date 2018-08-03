@@ -1,5 +1,4 @@
 open Sturgeon
-open Session
 open Inuit
 
 let buffer = ref ""
@@ -31,7 +30,6 @@ let client_change client patch =
 
 let () =
   ignore (Sys.signal Sys.sigpipe Sys.Signal_ignore);
-  let open Sexp in
   let socket_connect t () =
     prerr_endline "Client connected";
     Socket.send t (Patch.make ~offset:0 [`Editable] (Patch.Insert !buffer));
@@ -42,7 +40,7 @@ let () =
     prerr_endline "Client disconnected";
     clients := List.filter ((!=) t) !clients
   in
-  let server = Sturgeon_recipes_server.text_server "sync-text" (fun ~args shell ->
+  let server = Sturgeon_recipes_server.text_server "sync-text" (fun ~args:_ shell ->
       prerr_endline "New client";
       let socket = Inuit.Socket.make ~receive:ignore in
       Socket.set_on_connected socket (socket_connect socket);

@@ -64,7 +64,7 @@ let sexp_of_list ?(tail=sym_nil) l =
   aux l
 
 let rec sexp_mem x = function
-  | C (x', xs) when x = x' -> true
+  | C (x', _) when x = x' -> true
   | C (_, xs) -> sexp_mem x xs
   | _ -> false
 

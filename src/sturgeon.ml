@@ -1,7 +1,7 @@
 (*---------------------------------------------------------------------------
    Copyright (c) 2016 Frédéric Bour. All rights reserved.
    Distributed under the ISC license, see terms at the end of the file.
-   %%NAME%% %%VERSION%%
+   sturgeon v0.4.1-1-ga87e613
   ---------------------------------------------------------------------------*)
 
 module Sexp = Sturgeon_sexp
