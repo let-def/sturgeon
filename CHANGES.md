@@ -1,3 +1,8 @@
+v0.4.2 2018-10-14 Paris
+--------------------------
+
+v0.4.1 install script was wrong. Re-release with proper installation.
+
 v0.4.1 2018-07-08 Paris
 --------------------------
 
