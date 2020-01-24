@@ -1,0 +1,8 @@
+(executable
+ (name sturgeon_connector)
+ (modules Sturgeon_connector)
+ (libraries sturgeon))
+
+(install
+ (section bin)
+ (files (sturgeon_connector.exe as sturgeon_connector)))

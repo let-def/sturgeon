@@ -1,0 +1,7 @@
+(library
+ (name recipes_server)
+ (public_name sturgeon.recipes_server)
+ (wrapped false)
+ (synopsis "Entrypoints for session servers")
+ (modules Sturgeon_recipes_server)
+ (libraries sturgeon threads))

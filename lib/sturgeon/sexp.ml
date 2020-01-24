@@ -21,8 +21,8 @@ type 'a sexp =
   | V of 'a sexp list
   | M of 'a
 
-type void
-let void (_ : void) = assert false
+type void = { void : 'a . 'a }
+let void v = v.void
 
 let transform_list ~inj ?(map=fun x -> x) t =
   let rec aux = function

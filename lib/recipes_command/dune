@@ -1,0 +1,7 @@
+(library
+ (name recipes_command)
+ (public_name sturgeon.recipes_command)
+ (wrapped false)
+ (synopsis "Entrypoints for session-based commands")
+ (modules Sturgeon_recipes_command)
+ (libraries sturgeon))

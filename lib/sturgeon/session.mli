@@ -3,7 +3,7 @@
   This file is part of Sturgeon, a toolkit for remote higher-order control
   flow.
 
-  Copyright (C) 2016  Frédéric Bour  <frederic.bour(_)lakaban.net>
+  Copyright (C) 2016-2020  Frédéric Bour  <frederic.bour(_)lakaban.net>
 
   Permission is hereby granted, free of charge, to any person obtaining a
   copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@
 )* }}} *)
 
 open Result
-open Sturgeon_sexp
+open Sexp
 
 (** A session is a channel between two parties that can exchange enriched
     s-expressions.

@@ -31,7 +31,7 @@ open Inuit
 
 (** Set of flags recognized by Sturgeon interface. *)
 type flag = [ `Clickable | `Clicked | `Editable | `Prompt | `Focus
-            | `Custom of (string * Sturgeon_sexp.basic) ]
+            | `Custom of (string * Sexp.basic) ]
 
 (** A buffer shell is the abstract object representing the connection
     to the user-interface display.
@@ -44,7 +44,7 @@ type shell
 (** [buffer_greetings] provide you with a session and a shell.
     Send the session as a greetings to emacs instance and the shell will
     open and display buffers in this instance. *)
-val buffer_greetings : unit -> Sturgeon_session.t * shell
+val buffer_greetings : unit -> Session.t * shell
 
 val message : shell -> string -> unit
 
@@ -65,11 +65,11 @@ val create_cursor : shell -> name:string -> flag cursor
 type 'a menu = string * [ `Item of 'a | `Sub of 'a menu list ]
 
 val popup_menu :
-  shell -> string -> 'a menu list -> 'a Sturgeon_session.cont -> unit
+  shell -> string -> 'a menu list -> 'a Session.cont -> unit
 
 val read_file_name :
   shell -> prompt:string -> ?dir:string -> ?default:string ->
-  string Sturgeon_session.cont -> unit
+  string Session.cont -> unit
 
 val fit_to_window : buffer -> unit
 

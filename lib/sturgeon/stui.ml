@@ -1,11 +1,11 @@
 open Result
-open Sturgeon_sexp
-open Sturgeon_session
+open Sexp
+open Session
 type session = t
 open Inuit
 
 type simple_flag = [ `Clickable | `Clicked | `Editable | `Prompt | `Focus ]
-type flag = [ simple_flag | `Custom of (string * Sturgeon_sexp.basic) ]
+type flag = [ simple_flag | `Custom of (string * Sexp.basic) ]
 
 let dump_sexp sexp =
   let inj _ = S "<abstract>" and map x = x in
@@ -118,7 +118,7 @@ let remote_patch_of_sexp = function
 (** Buffer management *)
 
 type aux_command =
-  [ `Split of [`Left|`Right|`Top|`Bottom] * string * Sturgeon_session.t
+  [ `Split of [`Left|`Right|`Top|`Bottom] * string * Session.t
   | `Fit ]
 
 type buffer = {
@@ -126,7 +126,7 @@ type buffer = {
   patches: flag patch socket;
 }
 
-let sexp_of_buffer_command : aux_command -> Sturgeon_session.t = function
+let sexp_of_buffer_command : aux_command -> Session.t = function
   | `Split (dir, name, session) ->
     let dir = match dir with
       | `Left -> "left" | `Right -> "right"
@@ -231,7 +231,7 @@ let popup_menu shell title items action =
   let action = Once (function
       | Ok (I n) -> action (Ok values.(n))
       | Ok sexp ->
-        Sturgeon_session.cancel sexp;
+        Session.cancel sexp;
         action (Error (`Other (T "Invalid value (incorrect protocol)")))
       | Error err -> action (Error err)
     )
@@ -246,7 +246,7 @@ let read_file_name shell ~prompt ?dir ?default action =
   let action = Once (function
       | Ok (T name) -> action (Ok name)
       | Ok sexp ->
-        Sturgeon_session.cancel sexp;
+        Session.cancel sexp;
         action (Error (`Other (T "Invalid value (incorrect protocol)")))
       | Error err -> action (Error err)
     )

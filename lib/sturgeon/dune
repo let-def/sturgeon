@@ -1,0 +1,7 @@
+(library
+ (name sturgeon)
+ (public_name sturgeon)
+ (wrapped true)
+ (synopsis "A toolkit for communicating with Emacs")
+ (modules Sexp Session Stui)
+ (libraries result unix grenier.trope inuit))
